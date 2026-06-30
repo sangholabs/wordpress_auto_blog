@@ -1,0 +1,24 @@
+# 블로그 카테고리 정의 — 자동 주제 발굴/글 생성의 기준이 된다.
+# 메인 니치를 '생활/리빙·가전'으로 잡고, 토픽 권위를 위해 초기엔 집중한다.
+
+niche: "생활/리빙·가전"
+
+categories:
+  - slug: kitchen
+    name: "주방가전"
+    seed_keywords: ["에어프라이어 추천", "전기밥솥 비교", "커피머신", "식기세척기"]
+    priority: 1
+  - slug: cleaning
+    name: "청소·생활가전"
+    seed_keywords: ["로봇청소기 추천", "무선청소기 비교", "공기청정기", "제습기"]
+    priority: 1
+  - slug: living
+    name: "리빙·수납"
+    seed_keywords: ["주방 수납 아이디어", "옷장 정리", "1인가구 생활용품"]
+    priority: 2
+  - slug: seasonal
+    name: "계절·시즌"
+    seed_keywords: ["여름 필수템", "장마철 제습", "겨울 난방용품"]
+    priority: 3
+
+# 확장 예정(트래픽 안정화 후 개방): IT/디지털·가젯, 건강/뷰티

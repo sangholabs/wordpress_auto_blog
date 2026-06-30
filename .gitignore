@@ -1,0 +1,37 @@
+# === 비밀정보 / 개인정보 (절대 커밋 금지) ===
+.env
+.env.*
+!.env.example
+*credentials*.json
+*token*.json
+secrets/
+config/coupang_widget.html
+
+# === 개인 작업 기록 (사이트주소·추적코드 등 포함, 로컬 전용) ===
+context-notes.md
+HANDOFF.md
+
+# === 파이썬 ===
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# === 노드 ===
+node_modules/
+npm-debug.log*
+
+# === 수집/생성 데이터 (더미·임시, GitHub에 안 올림) ===
+data/
+logs/
+output/
+*.sqlite
+*.db
+.cache/
+
+# === OS / 에디터 ===
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

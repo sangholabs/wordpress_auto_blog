@@ -1,0 +1,30 @@
+# 파이프라인 운영 설정 — 토큰/비용 가드레일과 글 품질 기준을 담는다.
+
+content:
+  min_chars: 1800          # 애드센스/SEO 기준 최소 분량
+  toc: true                # 목차 자동 생성
+  internal_links: 3        # 본문 내 관련글 링크 최소 개수
+  coupang_disclosure: "이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다."
+  banner_layout: per_h2    # per_h2(소제목마다 서로 다른 배너 1개씩) | grouped(한 자리에 모아) | grouped_h2(한 자리+소제목마다 그룹)
+  max_banners: 3           # per_h2: 배너 넣을 소제목 수(보유 배너 수만큼, 중복 안 함) / grouped: 그룹당 배너 수
+  h2_groups: 3             # grouped_h2 전용
+
+seo:
+  title_keyword_front: true   # 제목 앞쪽에 핵심 키워드 배치
+  meta_description: true
+  image_alt_required: true
+
+publish:
+  status: draft            # 초기엔 draft로 검수 후 수동 발행 → 안정화되면 publish
+  schedule: true           # 예약발행 사용
+  posts_per_day: 1
+
+coupang:
+  rocket_only: true        # 로켓배송/로켓프레시/로켓직구 상품만 수집(신뢰도·전환율↑)
+  products_per_post: 5     # 글당 상품 카드 수
+  wp_banner_shortcode: ""  # iframe 배너는 방화벽에 안 막혀 직접 삽입한다. (script 배너로 막히면 "[coupang_dynamic_banner]" 로 숏코드 사용)
+
+guardrails:
+  monthly_llm_budget_usd: 10
+  stop_on_budget_exceed: true
+  dedupe_topics: true      # 이미 쓴 주제 중복 방지
