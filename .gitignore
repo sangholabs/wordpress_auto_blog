@@ -7,10 +7,6 @@
 secrets/
 config/coupang_widget.html
 
-# === 개인 작업 기록 (사이트주소·추적코드 등 포함, 로컬 전용) ===
-context-notes.md
-HANDOFF.md
-
 # === 파이썬 ===
 .venv/
 venv/

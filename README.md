@@ -47,3 +47,7 @@ blog/
 - `data/`, `logs/`, `output/`, 로그인 세션 프로필 — 실행 중 생성되는 로컬 데이터.
 
 clone 후에는 `SETUP.md`의 순서대로 본인 환경·자격증명만 채우면 바로 동작한다. 커밋 전에는 항상 `git status`로 위 파일들이 추적되지 않는지 확인한다.
+
+## 다른 PC에서 이어받기
+
+다른 PC에서 clone 해 이어서 작업하는 전체 절차는 `CONTINUE-ON-NEW-PC.md` 참고. 요약하면 clone → `SETUP.md` 설치 → 개인 시크릿 2개(`.env`, `config/coupang_widget.html`)만 준비 → `python -m src.pipeline`. 작업 후 `push.bat`으로 올리고 다른 PC에선 `git pull`로 받는다.
