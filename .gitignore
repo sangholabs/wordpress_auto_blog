@@ -26,6 +26,9 @@ output/
 *.db
 .cache/
 
+# === 중첩 저장소(실수로 생긴 폴더 안 clone) ===
+wordpress_auto_blog/
+
 # === OS / 에디터 ===
 .DS_Store
 Thumbs.db
