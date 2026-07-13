@@ -48,6 +48,20 @@ blog/
 
 clone 후에는 `SETUP.md`의 순서대로 본인 환경·자격증명만 채우면 바로 동작한다. 커밋 전에는 항상 `git status`로 위 파일들이 추적되지 않는지 확인한다.
 
+## 설정으로 바꿀 수 있는 것
+
+코드 수정 없이 `config/settings.yaml`(동작·디자인)과 `.env`(키·포트)에서 조정한다. 각 항목엔 주석이 달려 있다.
+
+- content — 최소 분량, 목차, 쿠팡 고지문구, 배너 레이아웃(per_h2/grouped/grouped_h2)·개수.
+- publish — 발행 모드(publish/draft), 하루 편수, 자동발행 시각(schedule_time).
+- llm — anthropic/gemini 모델, max_tokens.
+- keyword_research — 요청 딜레이·타임아웃, 구글/네이버 소스 on/off.
+- topic_queue — 구매의도 키워드(intent_words), 롱테일 단어 수 범위.
+- design — 본문 폭·글자 크기·행간·주색상·가격색·폰트.
+- coupang — 로켓 전용, 글당 상품 수, 검색 수·타임아웃, 스크래퍼 포트, 배너 숏코드.
+- 니치·카테고리·주제 씨앗 — `config/categories.yaml`.
+- .env — LLM_PROVIDER·키, 쿠팡 키/태그, WordPress 자격증명, `DASHBOARD_PORT`, 예산·편수.
+
 ## 다른 PC에서 이어받기
 
 다른 PC에서 clone 해 이어서 작업하는 전체 절차는 `CONTINUE-ON-NEW-PC.md` 참고. 요약하면 clone → `SETUP.md` 설치 → 개인 시크릿 2개(`.env`, `config/coupang_widget.html`)만 준비 → `python -m src.pipeline`. 작업 후 `push.bat`으로 올리고 다른 PC에선 `git pull`로 받는다.

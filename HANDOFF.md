@@ -41,13 +41,15 @@ WordPress(설치형, 카페24) 블로그에 쿠팡 파트너스 + 애드센스 �
 
 ## 5. 실행
 
+가장 쉬운 방법은 **`제어판.bat` 더블클릭** → 콘솔 메뉴로 발행·자동발행·설정·대시보드·push 모두 조작(`src/menu.py`). 대시보드(`src/dashboard.py`)로 브라우저 조작도 가능(메뉴 11번).
+
+명령줄로도 가능.
 ```powershell
 .\.venv\Scripts\python.exe -m src.pipeline            # 전체 1회(키워드→주제→생성→발행)
-.\.venv\Scripts\python.exe -m src.generate_post       # 글 1편 생성+미리보기
-.\.venv\Scripts\python.exe -m src.formatter output\draft_*.md   # 토큰없이 재렌더
-.\.venv\Scripts\python.exe -m src.wp_publish output\draft_*.md  # 발행
+.\.venv\Scripts\python.exe -m src.pipeline --refresh  # 키워드 새로 수집 후
+.\.venv\Scripts\python.exe -m src.set_option <key> <value>   # 설정 변경(status/posts_per_day/banner_layout/max_banners/rocket_only/schedule_time)
 ```
-자동화: `schtasks /create /tn "blog-auto" /tr "...\blog\run.bat" /sc daily /st 09:00`
+자동화: 메뉴 3번(또는 `python -m src.schedule_task on`)이 `run.bat`을 매일 `schedule_time`에 실행하도록 등록. 루트 .bat 은 `제어판.bat`(메인)·`run.bat`(스케줄러 전용) 둘뿐.
 
 ## 6. 수익화 현황 / 단계 전략
 

@@ -17,6 +17,10 @@ PROFILE_DIR = DATA_DIR / ".pw_profile"  # 로그인 세션 저장(.gitignore 대
 PARTNERS_URL = "https://partners.coupang.com/"
 
 
+def _cdp_port() -> int:
+    return get_settings().get("coupang", {}).get("scraper_port", 9222)
+
+
 _STEALTH = "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
 
 
@@ -36,11 +40,11 @@ def _open():
     return p, ctx, page
 
 
-def _open_cdp(port: int = 9222):
+def _open_cdp(port: int | None = None):
     # SH님이 직접 띄운 실제 Chrome 에 연결한다(가장 확실한 봇 우회).
-    # 사전: chrome.exe --remote-debugging-port=9222 --user-data-dir="...data\chrome-profile" 로 실행 후 수동 로그인.
+    # 사전: chrome.exe --remote-debugging-port=<port> --user-data-dir="...data\chrome-profile" 로 실행 후 수동 로그인.
     p = sync_playwright().start()
-    browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
+    browser = p.chromium.connect_over_cdp(f"http://localhost:{port or _cdp_port()}")
     ctx = browser.contexts[0]
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     return p, ctx, page
@@ -77,7 +81,7 @@ _STATIC = (".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".wo
 def netlog(cdp: bool = True):
     # 모든 비정적 요청을 캡처한다. 연결된 탭도 출력해 올바른 창에 붙었는지 확인한다.
     p = sync_playwright().start()
-    browser = p.chromium.connect_over_cdp("http://localhost:9222")
+    browser = p.chromium.connect_over_cdp(f"http://localhost:{_cdp_port()}")
     captured = []
 
     def on_response(resp):

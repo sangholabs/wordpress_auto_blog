@@ -9,32 +9,40 @@ from .coupang import search_products
 
 OUTPUT_DIR = ROOT / "output"
 
-# 본문 가독성 스타일 (모바일 우선, 큰 본문 폰트·넉넉한 행간)
-STYLE = """<style>
-.post{max-width:720px;margin:0 auto;padding:16px;font-size:18px;line-height:1.8;
-color:#222;font-family:-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;}
-.post h1{font-size:30px;line-height:1.35;margin:.6em 0;}
-.post h2{font-size:24px;margin:1.4em 0 .5em;border-left:5px solid #2d6cdf;padding-left:10px;}
-.post img{max-width:100%;height:auto;border-radius:8px;}
-.post table{width:100%;border-collapse:collapse;margin:1em 0;}
-.post th,.post td{border:1px solid #ddd;padding:10px;text-align:left;}
-.post th{background:#f5f7fb;}
-.disclosure{background:#fff7e6;border:1px solid #ffd591;border-radius:8px;
-padding:10px 14px;font-size:14px;color:#8a6d3b;margin-bottom:20px;}
-.toc{background:#f7f9fc;border:1px solid #e3e8f0;border-radius:8px;padding:14px 18px;margin:18px 0;}
-.toc a{color:#2d6cdf;text-decoration:none;display:block;margin:4px 0;}
-.coupang-cta{display:block;text-align:center;background:#2d6cdf;color:#fff;
-padding:14px;border-radius:8px;font-weight:bold;text-decoration:none;margin:24px 0;}
-.products{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin:24px 0;}
-.pcard{border:1px solid #e3e8f0;border-radius:10px;overflow:hidden;text-align:center;}
-.pcard a{text-decoration:none;color:#222;display:block;}
-.pcard img{width:100%;aspect-ratio:1/1;object-fit:cover;}
-.pname{font-size:14px;line-height:1.4;padding:8px 8px 0;height:3.9em;overflow:hidden;}
-.pprice{font-weight:bold;color:#d6293e;padding:4px 8px;}
-.pbtn{display:block;background:#2d6cdf;color:#fff;padding:8px;font-size:14px;font-weight:bold;}
-.coupang-widget{text-align:center;margin:24px 0;}
-.coupang-group{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:24px 0;}
-.coupang-group .coupang-widget{margin:0;}
+# 본문 가독성 스타일 (모바일 우선). 색·폭·폰트는 settings.yaml 의 design 에서 읽는다.
+def _style() -> str:
+    d = get_settings().get("design", {})
+    mw = d.get("max_width_px", 720)
+    fs = d.get("font_size_px", 18)
+    lh = d.get("line_height", 1.8)
+    pc = d.get("primary_color", "#2d6cdf")
+    price = d.get("price_color", "#d6293e")
+    ff = d.get("font_family", "-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif")
+    return f"""<style>
+.post{{max-width:{mw}px;margin:0 auto;padding:16px;font-size:{fs}px;line-height:{lh};
+color:#222;font-family:{ff};}}
+.post h1{{font-size:30px;line-height:1.35;margin:.6em 0;}}
+.post h2{{font-size:24px;margin:1.4em 0 .5em;border-left:5px solid {pc};padding-left:10px;}}
+.post img{{max-width:100%;height:auto;border-radius:8px;}}
+.post table{{width:100%;border-collapse:collapse;margin:1em 0;}}
+.post th,.post td{{border:1px solid #ddd;padding:10px;text-align:left;}}
+.post th{{background:#f5f7fb;}}
+.disclosure{{background:#fff7e6;border:1px solid #ffd591;border-radius:8px;
+padding:10px 14px;font-size:14px;color:#8a6d3b;margin-bottom:20px;}}
+.toc{{background:#f7f9fc;border:1px solid #e3e8f0;border-radius:8px;padding:14px 18px;margin:18px 0;}}
+.toc a{{color:{pc};text-decoration:none;display:block;margin:4px 0;}}
+.coupang-cta{{display:block;text-align:center;background:{pc};color:#fff;
+padding:14px;border-radius:8px;font-weight:bold;text-decoration:none;margin:24px 0;}}
+.products{{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin:24px 0;}}
+.pcard{{border:1px solid #e3e8f0;border-radius:10px;overflow:hidden;text-align:center;}}
+.pcard a{{text-decoration:none;color:#222;display:block;}}
+.pcard img{{width:100%;aspect-ratio:1/1;object-fit:cover;}}
+.pname{{font-size:14px;line-height:1.4;padding:8px 8px 0;height:3.9em;overflow:hidden;}}
+.pprice{{font-weight:bold;color:{price};padding:4px 8px;}}
+.pbtn{{display:block;background:{pc};color:#fff;padding:8px;font-size:14px;font-weight:bold;}}
+.coupang-widget{{text-align:center;margin:24px 0;}}
+.coupang-group{{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:24px 0;}}
+.coupang-group .coupang-widget{{margin:0;}}
 </style>"""
 
 
@@ -151,7 +159,7 @@ def to_html(post: dict, for_wordpress: bool = False) -> str:
     body_md = re.sub(r"^>\s*메타설명:.*$", "", post["markdown"], flags=re.MULTILINE)
     html = md.markdown(body_md, extensions=["tables", "fenced_code"])
     html = _anchor_headings(html)
-    products = search_products(post["keyword"], limit=5) or _from_cache(post["keyword"])
+    products = search_products(post["keyword"]) or _from_cache(post["keyword"])
     if products:
         html = _place(html, _cards_html(products))  # 실상품 카드는 1회 삽입
     else:
@@ -181,7 +189,7 @@ def to_html(post: dict, for_wordpress: bool = False) -> str:
     html = re.sub(r"\[\[COUPANG(:[^\]]*)?\]\]", _coupang_cta(post["keyword"]), html)
     disclosure = f'<div class="disclosure">{s["coupang_disclosure"]}</div>'
     toc = _build_toc(html) if s.get("toc") else ""
-    full = f'{STYLE}<article class="post">{disclosure}{toc}{html}</article>'
+    full = f'{_style()}<article class="post">{disclosure}{toc}{html}</article>'
     return full
 
 

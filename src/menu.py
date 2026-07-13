@@ -1,0 +1,84 @@
+# 통합 제어판 — 콘솔 메뉴 하나로 발행·자동발행·설정·대시보드·push 를 관리한다 (한글 OK)
+import subprocess
+import sys
+
+from . import pipeline, schedule_task
+from .config import ROOT, get_settings
+from .set_option import set_option
+
+MENU = """
+==================== 블로그 자동화 제어판 ====================
+ [발행]
+  1. 지금 1편 발행
+  2. 키워드 새로 수집 후 발행
+ [자동발행]
+  3. 자동발행 켜기      4. 자동발행 끄기      5. 시각 변경
+ [설정]
+  6. 발행모드 (공개/초안)    7. 하루 편수
+  8. 배너 레이아웃           9. 배너 개수        10. 로켓 전용
+ [기타]
+ 11. 대시보드 열기          12. GitHub 올리기(push)
+  0. 종료
+=============================================================="""
+
+
+def _status():
+    s = get_settings()
+    p, c, cp = s.get("publish", {}), s.get("content", {}), s.get("coupang", {})
+    print(f"현재 → 발행모드:{p.get('status')} | 하루:{p.get('posts_per_day')}편 | "
+          f"시각:{p.get('schedule_time')} | 배너:{c.get('banner_layout')}/{c.get('max_banners')}개 | "
+          f"로켓전용:{'켜짐' if cp.get('rocket_only') else '꺼짐'}")
+
+
+def _dashboard():
+    flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+    subprocess.Popen([sys.executable, "-m", "src.dashboard"], cwd=str(ROOT), creationflags=flags)
+    print("대시보드를 새 창에서 열었습니다.")
+
+
+def _push():
+    subprocess.run(["git", "add", "."], cwd=str(ROOT))
+    subprocess.run(["git", "commit", "-m", "update"], cwd=str(ROOT))
+    subprocess.run(["git", "push"], cwd=str(ROOT))
+
+
+def main():
+    while True:
+        print(MENU)
+        _status()
+        c = input("번호 선택: ").strip()
+        if c == "1":
+            pipeline.run(refresh_keywords=False)
+        elif c == "2":
+            pipeline.run(refresh_keywords=True)
+        elif c == "3":
+            schedule_task.on()
+        elif c == "4":
+            schedule_task.off()
+        elif c == "5":
+            set_option("schedule_time", input("자동발행 시각(HH:MM): ").strip())
+            schedule_task.on()
+        elif c == "6":
+            set_option("status", "publish" if input("1) 공개  2) 초안 : ").strip() == "1" else "draft")
+        elif c == "7":
+            set_option("posts_per_day", input("하루 편수(1-5): ").strip())
+        elif c == "8":
+            m = {"1": "per_h2", "2": "grouped", "3": "grouped_h2"}
+            set_option("banner_layout", m.get(input("1) 소제목분산  2) 한자리모아  3) 혼합 : ").strip(), "per_h2"))
+        elif c == "9":
+            set_option("max_banners", input("배너 개수(1-3): ").strip())
+        elif c == "10":
+            set_option("rocket_only", "true" if input("1) 켜기  2) 끄기 : ").strip() == "1" else "false")
+        elif c == "11":
+            _dashboard()
+        elif c == "12":
+            _push()
+        elif c == "0":
+            break
+        else:
+            print("잘못된 번호입니다.")
+        input("\n[Enter] 메뉴로 돌아가기...")
+
+
+if __name__ == "__main__":
+    main()

@@ -5,9 +5,13 @@ import shutil
 import subprocess
 from datetime import date
 
-from .config import DATA_DIR, env
+from .config import DATA_DIR, env, get_settings
 
 USAGE_FILE = DATA_DIR / "usage.json"
+
+
+def _llm_cfg() -> dict:
+    return get_settings().get("llm", {})
 
 
 def _record_call(provider: str):
@@ -34,8 +38,11 @@ def _via_claude_code(prompt: str, system: str | None) -> str:
         )
     full = f"{system}\n\n---\n\n{prompt}" if system else prompt
     cmd = ["cmd", "/c", exe, "-p"] if os.name == "nt" else [exe, "-p"]
+    # 구독 로그인이 우선되도록 ANTHROPIC_API_KEY 를 자식 프로세스 환경에서 제거한다.
+    child_env = os.environ.copy()
+    child_env.pop("ANTHROPIC_API_KEY", None)
     result = subprocess.run(
-        cmd, input=full, capture_output=True, text=True, encoding="utf-8"
+        cmd, input=full, capture_output=True, text=True, encoding="utf-8", env=child_env
     )
     if result.returncode != 0:
         raise RuntimeError(f"claude -p 실패: {result.stderr.strip()}")
@@ -50,7 +57,8 @@ def _via_gemini(prompt: str, system: str | None) -> str:
             "GEMINI_API_KEY 가 비어 있습니다. .env 에 키를 넣거나 LLM_PROVIDER 를 바꾸세요. (SETUP.md 참고)"
         )
     genai.configure(api_key=env("GEMINI_API_KEY"))
-    model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=system)
+    name = _llm_cfg().get("gemini_model", "gemini-1.5-flash")
+    model = genai.GenerativeModel(name, system_instruction=system)
     return model.generate_content(prompt).text.strip()
 
 
@@ -62,9 +70,10 @@ def _via_anthropic(prompt: str, system: str | None) -> str:
             "ANTHROPIC_API_KEY 가 비어 있습니다. .env 에 키를 넣거나 LLM_PROVIDER 를 바꾸세요. (SETUP.md 참고)"
         )
     client = anthropic.Anthropic(api_key=env("ANTHROPIC_API_KEY"))
+    cfg = _llm_cfg()
     msg = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=4096,
+        model=cfg.get("anthropic_model", "claude-sonnet-4-6"),
+        max_tokens=cfg.get("max_tokens", 4096),
         system=system or "",
         messages=[{"role": "user", "content": prompt}],
     )

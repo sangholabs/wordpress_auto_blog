@@ -5,7 +5,7 @@ import time
 
 import requests
 
-from .config import env
+from .config import env, get_settings
 
 HOST = "https://api-gateway.coupang.com"
 PATH = "/v2/providers/affiliate_open_api/apis/openapi/products/search"
@@ -25,15 +25,17 @@ def _authorization(method: str, path: str, query: str) -> str:
     )
 
 
-def search_products(keyword: str, limit: int = 5) -> list[dict]:
+def search_products(keyword: str, limit: int | None = None) -> list[dict]:
     # API 키가 없으면 빈 리스트를 반환해 호출부가 폴백하도록 한다.
     if not env("COUPANG_ACCESS_KEY") or not env("COUPANG_SECRET_KEY"):
         return []
+    cfg = get_settings().get("coupang", {})
+    limit = limit or cfg.get("search_limit", 5)
     query = f"keyword={requests.utils.quote(keyword)}&limit={limit}"
     url = f"{HOST}{PATH}?{query}"
     headers = {"Authorization": _authorization("GET", PATH, query)}
     try:
-        r = requests.get(url, headers=headers, timeout=15)
+        r = requests.get(url, headers=headers, timeout=cfg.get("api_timeout_sec", 15))
         r.raise_for_status()
         data = r.json().get("data", {}).get("productData", [])
     except Exception as e:

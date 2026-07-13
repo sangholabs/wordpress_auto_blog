@@ -17,6 +17,7 @@ def _slug(keyword: str) -> str:
 
 def generate_post(topic: dict) -> dict:
     prompt = build_post_prompt(topic)
+    print(f"'{topic['keyword']}' 글 생성 중... (Claude 응답 대기, 1~3분 소요)", flush=True)
     markdown = generate(prompt, system=POST_SYSTEM)
 
     title_match = re.search(r"^#\s+(.+)$", markdown, re.MULTILINE)

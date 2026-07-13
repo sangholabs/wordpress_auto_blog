@@ -1,23 +1,32 @@
 # 수집 키워드를 상업적 의도·롱테일 기준으로 점수화하고 중복 제거해 주제 큐를 만든다 (0토큰)
 import json
+from functools import lru_cache
 
-from .config import DATA_DIR
+from .config import DATA_DIR, get_settings
 
 KEYWORDS_FILE = DATA_DIR / "keywords.json"
 QUEUE_FILE = DATA_DIR / "topic_queue.json"
 PUBLISHED_FILE = DATA_DIR / "published.json"
 
-# 구매 의도가 강한 신호 — 쿠팡 전환에 유리
+# 구매 의도가 강한 신호 — 쿠팡 전환에 유리 (설정 미지정 시 기본값)
 INTENT_WORDS = ["추천", "비교", "후기", "순위", "가성비", "best", "TOP", "단점", "vs"]
 
 
+@lru_cache(maxsize=1)
+def _score_cfg():
+    s = get_settings().get("topic_queue", {})
+    words = [w.lower() for w in s.get("intent_words", INTENT_WORDS)]
+    return words, s.get("longtail_min_words", 2), s.get("longtail_max_words", 5)
+
+
 def score_keyword(kw: str) -> int:
+    intent, lo, hi = _score_cfg()
     score = 0
-    for w in INTENT_WORDS:
-        if w.lower() in kw.lower():
+    for w in intent:
+        if w in kw.lower():
             score += 3
     words = len(kw.split())
-    if 2 <= words <= 5:  # 적당한 롱테일이 경쟁 낮고 전환 좋음
+    if lo <= words <= hi:  # 적당한 롱테일이 경쟁 낮고 전환 좋음
         score += 2
     if len(kw) >= 6:
         score += 1
