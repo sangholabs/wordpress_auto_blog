@@ -1,5 +1,6 @@
 # 로컬 웹 대시보드 — 브라우저 버튼으로 발행·자동발행을 제어한다 (외부 의존성 없음, stdlib)
 import html as htmlmod
+import os
 import socket
 import subprocess
 import sys
@@ -85,8 +86,11 @@ small{color:#777;}form{display:inline;}
 
 def _bg(args):
     (ROOT / "logs").mkdir(exist_ok=True)
+    env2 = os.environ.copy()
+    env2["PYTHONUTF8"] = "1"          # 자식 프로세스 출력을 UTF-8 로 (로그 한글 깨짐 방지)
+    env2["PYTHONIOENCODING"] = "utf-8"
     with open(LOG, "a", encoding="utf-8") as f:
-        subprocess.Popen(args, cwd=str(ROOT), stdout=f, stderr=subprocess.STDOUT)
+        subprocess.Popen(args, cwd=str(ROOT), stdout=f, stderr=subprocess.STDOUT, env=env2)
 
 
 def _tail(n=50):

@@ -17,7 +17,7 @@ seo:
 publish:
   status: publish          # 즉시 공개 발행 (검수 필요 시 draft 로 되돌림)
   schedule: true           # 예약발행 사용
-  posts_per_day: 1
+  posts_per_day: 2
   schedule_time: "09:00"   # 자동발행 시각(작업 스케줄러). 자동발행_켜기.bat 이 이 값을 사용
 
 llm:
