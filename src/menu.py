@@ -2,7 +2,7 @@
 import subprocess
 import sys
 
-from . import pipeline, schedule_task
+from . import pages, pipeline, schedule_task
 from .config import ROOT, get_settings
 from .set_option import set_option
 
@@ -18,6 +18,7 @@ MENU = """
   8. 배너 레이아웃           9. 배너 개수        10. 로켓 전용
  [기타]
  11. 대시보드 열기          12. GitHub 올리기(push)
+ 13. 애드센스 필수 페이지 생성 (소개/개인정보/문의)
   0. 종료
 =============================================================="""
 
@@ -73,6 +74,8 @@ def main():
             _dashboard()
         elif c == "12":
             _push()
+        elif c == "13":
+            pages.create_required_pages()
         elif c == "0":
             break
         else:
