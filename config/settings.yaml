@@ -35,6 +35,7 @@ topic_queue:
   intent_words: ["추천", "비교", "후기", "순위", "가성비", "best", "TOP", "단점", "vs"]  # 구매의도 신호(점수 가산)
   longtail_min_words: 2    # 롱테일 가산 단어 수 범위
   longtail_max_words: 5
+  one_per_product: true    # 같은 상품 뿌리 단어는 1개만(유사 중복 글 방지)
 
 design:
   max_width_px: 720        # 본문 최대 폭

@@ -15,10 +15,21 @@ def _slug(keyword: str) -> str:
     return re.sub(r"\s+", "-", keyword.strip())
 
 
+def _clean_markdown(text: str) -> str:
+    # LLM 이 가끔 전체를 ```로 감싸거나 끝에 설명 멘트를 붙인다. 그걸 제거한다.
+    text = text.strip()
+    m = re.match(r"^```[a-zA-Z]*\n(.*?)\n```", text, re.DOTALL)
+    if m:  # 코드블록으로 감싼 경우 안쪽만 취하고 뒤 설명은 버린다
+        return m.group(1).strip()
+    text = re.sub(r"^```[a-zA-Z]*\n", "", text)
+    text = re.sub(r"\n```\s*$", "", text)
+    return text.strip()
+
+
 def generate_post(topic: dict) -> dict:
     prompt = build_post_prompt(topic)
     print(f"'{topic['keyword']}' 글 생성 중... (Claude 응답 대기, 1~3분 소요)", flush=True)
-    markdown = generate(prompt, system=POST_SYSTEM)
+    markdown = _clean_markdown(generate(prompt, system=POST_SYSTEM))
 
     title_match = re.search(r"^#\s+(.+)$", markdown, re.MULTILINE)
     meta_match = re.search(r"^>\s*메타설명:\s*(.+)$", markdown, re.MULTILINE)

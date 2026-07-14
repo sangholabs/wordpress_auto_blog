@@ -1,4 +1,5 @@
 # 통합 제어판 — 콘솔 메뉴 하나로 발행·자동발행·설정·대시보드·push 를 관리한다 (한글 OK)
+import re
 import shutil
 import subprocess
 import sys
@@ -56,6 +57,14 @@ def _claude_login():
     print("로그인은 이 PC에 저장되어, 이후 발행은 자동으로 인증을 사용합니다. (창은 닫아도 됨)")
 
 
+def _ask_int(prompt: str, lo: int, hi: int):
+    v = input(prompt).strip()
+    if v.isdigit() and lo <= int(v) <= hi:
+        return v
+    print(f"{lo}~{hi} 사이 숫자만 입력하세요. 변경을 취소합니다.")
+    return None
+
+
 def main():
     while True:
         print(MENU)
@@ -70,17 +79,25 @@ def main():
         elif c == "4":
             schedule_task.off()
         elif c == "5":
-            set_option("schedule_time", input("자동발행 시각(HH:MM): ").strip())
-            schedule_task.on()
+            t = input("자동발행 시각(HH:MM, 예 09:00): ").strip()
+            if re.fullmatch(r"[0-2]\d:[0-5]\d", t):
+                set_option("schedule_time", t)
+                schedule_task.on()
+            else:
+                print("HH:MM 형식으로 입력하세요. 변경을 취소합니다.")
         elif c == "6":
             set_option("status", "publish" if input("1) 공개  2) 초안 : ").strip() == "1" else "draft")
         elif c == "7":
-            set_option("posts_per_day", input("하루 편수(1-5): ").strip())
+            v = _ask_int("하루 편수(1-5): ", 1, 5)
+            if v:
+                set_option("posts_per_day", v)
         elif c == "8":
             m = {"1": "per_h2", "2": "grouped", "3": "grouped_h2"}
             set_option("banner_layout", m.get(input("1) 소제목분산  2) 한자리모아  3) 혼합 : ").strip(), "per_h2"))
         elif c == "9":
-            set_option("max_banners", input("배너 개수(1-3): ").strip())
+            v = _ask_int("배너 개수(1-3): ", 1, 3)
+            if v:
+                set_option("max_banners", v)
         elif c == "10":
             set_option("rocket_only", "true" if input("1) 켜기  2) 끄기 : ").strip() == "1" else "false")
         elif c == "11":

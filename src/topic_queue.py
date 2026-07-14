@@ -33,6 +33,17 @@ def score_keyword(kw: str) -> int:
     return score
 
 
+def _root(kw: str) -> str:
+    # 주제의 '상품 뿌리 단어'(맨 앞 상품명 토큰)를 뽑는다. 유사 주제 중복 제거용.
+    intent, _, _ = _score_cfg()
+    skip = set(intent) | {"2024", "2025", "2026"}
+    for tok in kw.lower().split():
+        t = tok.replace("년", "")
+        if t and t not in skip and not t.isdigit():
+            return t
+    return kw.lower()
+
+
 def _published_set() -> set[str]:
     if PUBLISHED_FILE.exists():
         return set(json.loads(PUBLISHED_FILE.read_text(encoding="utf-8")))
@@ -49,6 +60,16 @@ def build() -> list[dict]:
                 continue
             queue.append({"category": slug, "keyword": kw, "score": score_keyword(kw)})
     queue.sort(key=lambda x: x["score"], reverse=True)
+    if get_settings().get("topic_queue", {}).get("one_per_product", True):
+        # 같은 상품 뿌리 단어는 최고 점수 1개만 남긴다(유사 중복 글 방지)
+        seen, deduped = set(), []
+        for t in queue:
+            r = _root(t["keyword"])
+            if r in seen:
+                continue
+            seen.add(r)
+            deduped.append(t)
+        queue = deduped
     QUEUE_FILE.write_text(
         json.dumps(queue, ensure_ascii=False, indent=2), encoding="utf-8"
     )

@@ -45,11 +45,17 @@ def publish_post(post: dict, status: str | None = None) -> dict:
             "SETUP.md 6단계를 참고해 Application Password 를 발급하세요."
         )
     status = status or get_settings()["publish"]["status"]
+    kw = post.get("keyword", "")
     payload = {
         "title": post["title"],
+        "slug": re.sub(r"\s+", "-", kw.strip()) or None,  # 긴 제목 대신 키워드 기반 짧은 슬러그
         "content": to_html(post, for_wordpress=True),
         "status": status,
         "excerpt": post.get("meta_description", ""),
+        "meta": {  # Rank Math SEO 자동 설정(지원 안 하면 아래에서 제거 후 재시도)
+            "rank_math_focus_keyword": kw,
+            "rank_math_description": post.get("meta_description", ""),
+        },
     }
     name = _category_name(post.get("category", ""))
     if name:
@@ -57,6 +63,9 @@ def publish_post(post: dict, status: str | None = None) -> dict:
         if cid:
             payload["categories"] = [cid]
     r = requests.post(f"{_base()}/posts", json=payload, auth=_auth(), timeout=30)
+    if r.status_code >= 400 and "meta" in payload:
+        payload.pop("meta")  # Rank Math meta 미지원 환경이면 빼고 재시도
+        r = requests.post(f"{_base()}/posts", json=payload, auth=_auth(), timeout=30)
     if r.status_code >= 400:
         raise RuntimeError(f"게시 실패 {r.status_code}: {r.text}")
     d = r.json()
