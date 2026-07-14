@@ -9,9 +9,10 @@
 3. 글 생성 엔진 — Claude Code 설치 + 로그인, 또는 다른 LLM 선택 (3단계).
 4. 환경변수 — `copy .env.example .env` 후 값 입력 (4단계).
 4-1. 본인 니치 — `config/categories.yaml`의 니치·카테고리·seed 키워드를 본인 주제로 수정.
-5. 쿠팡 — 계정 상태에 맞게 배너 또는 API (5단계).
-6. WordPress — OAuth 자격증명 입력 (6단계).
-7. 실행 + 자동화 — 파이프라인 실행, 작업 스케줄러 등록 (7·8단계).
+5. 쿠팡 — 계정 상태에 맞게 배너(iframe) 또는 API (5단계).
+6. WordPress — Application Password 입력 (6단계).
+7. 애드센스 필수 페이지 — SITE_* 채우고 제어판 13번 (7단계).
+8. 실행 / 자동화 — `제어판.bat` 하나로 발행·자동발행·설정 (8단계).
 
 ## 1. 전역 설치 (PC에 1회)
 
@@ -63,9 +64,9 @@ copy .env.example .env
 쿠팡 파트너스 Open API 는 **최종 승인(누적 판매금액 15만 원) 이후에만** 발급된다. 코드는 자동으로 알맞은 방식을 쓴다(API 키 있으면 상품카드, 없으면 배너, 둘 다 없으면 검색 링크).
 
 ### A. 아직 최종 승인 전 (대부분의 신규 계정) → 다이나믹 배너
-1. 쿠팡 파트너스 → 상단 "배너/위젯" → "다이나믹 배너" 생성 → `<script>` 코드 복사.
+1. 쿠팡 파트너스 → "링크 생성" → "다이나믹 배너" → 배너 생성 → **iframe 코드** 복사. (script 버전은 NinjaFirewall 등 보안 플러그인에 막힐 수 있어 iframe 권장)
 2. `config\coupang_widget.example.html` 을 같은 폴더에 `coupang_widget.html` 로 복사.
-3. 그 파일 맨 아래에 스니펫을 붙여넣고 저장. (개인 추적ID 포함이라 `.gitignore` 처리됨)
+3. 그 파일 맨 아래에 iframe 을 붙여넣고 저장. 여러 개는 `---` 한 줄로 구분하면 소제목마다 다른 배너가 들어간다. (개인 추적ID 포함이라 `.gitignore` 처리됨)
 4. 준회원도 링크·수익이 가능하므로, 이렇게 운영하며 판매금액 15만 원을 채운다.
 
 ### B. 최종 승인 완료 → Open API 상품카드 (자동 전환)
@@ -100,27 +101,23 @@ copy .env.example .env
 ```
 `config\settings.yaml` 의 `publish.status` 가 기본 `draft` 라, 워드프레스 관리자에서 검수 후 직접 발행한다. 익숙해지면 `publish` 로 바꿔 완전 자동 발행한다.
 
-## 7. 실행
+## 7. 애드센스 필수 페이지 (최초 1회)
 
-```powershell
-.\.venv\Scripts\python.exe -m src.keyword_research   # 키워드 수집
-.\.venv\Scripts\python.exe -m src.topic_queue        # 주제 큐 생성
-.\.venv\Scripts\python.exe -m src.generate_post      # 글 생성 + 미리보기
+`.env` 의 `SITE_NAME`/`SITE_OWNER`/`SITE_EMAIL` 을 채운 뒤 제어판(8단계) **13번** 을 실행하면 소개·개인정보처리방침·문의 페이지가 자동 생성된다. 그 뒤 워드프레스 관리자 → 외모 → 메뉴에서 세 페이지를 메뉴에 추가한다(애드센스 필수).
+
+## 8. 실행 / 자동화 — 제어판 하나로
+
+일상 조작은 **`제어판.bat` 더블클릭** → 콘솔 메뉴로 한다.
+
+```
+1 지금 1편 발행   2 키워드 새로 수집 후 발행
+3 자동발행 켜기   4 끄기   5 시각 변경
+6 발행모드  7 하루 편수  8 배너 레이아웃  9 배너 개수  10 로켓 전용
+11 대시보드(브라우저)  12 push  13 애드센스 필수 페이지
 ```
 
-## 8. 자동화 (작업 스케줄러)
-
-전체 파이프라인은 한 줄로 실행된다(키워드 수집 → 주제 선정 → 글 생성 → 발행).
-```powershell
-.\.venv\Scripts\python.exe -m src.pipeline            # 일반 실행(기존 주제 큐 사용)
-.\.venv\Scripts\python.exe -m src.pipeline --refresh  # 키워드 새로 수집 후 실행
-```
-
-Windows는 cron 대신 **작업 스케줄러**를 쓴다. `run.bat` 을 매일 정해진 시각에 실행하도록 등록한다(관리자 PowerShell).
-```powershell
-schtasks /create /tn "blog-auto" /tr "C:\Users\<사용자>\Desktop\blog\run.bat" /sc daily /st 09:00
-```
-- 토큰 절약. 키워드 수집·발행은 0토큰이고, 글 생성 단계만 LLM을 쓴다. 하루 1편이면 부담이 적다.
-- 실행 로그는 `logs\pipeline.log` 에 쌓인다.
-- 발행한 주제는 `data\published.json` 에 기록되어 다시 쓰지 않는다.
-- 등록 해제. `schtasks /delete /tn "blog-auto" /f`
+- **3번(자동발행 켜기)** = `run.bat` 을 매일 `schedule_time`(기본 09:00)에 실행하도록 Windows 작업 스케줄러에 등록. 창을 닫아도 유지되며, PC 가 그 시각에 켜져 있어야 발행된다.
+- 브라우저 UI 로 조작하려면 **11번(대시보드)** → http://localhost:5000.
+- 명령줄도 가능: `.\.venv\Scripts\python.exe -m src.pipeline` (또는 `--refresh`).
+- 실행 로그 `logs\pipeline.log`, 발행 이력 `data\published.json`(중복 발행 방지).
+- 루트 .bat 은 `제어판.bat`(메인)·`run.bat`(스케줄러 전용) 둘뿐.

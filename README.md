@@ -64,4 +64,4 @@ clone 후에는 `SETUP.md`의 순서대로 본인 환경·자격증명만 채우
 
 ## 다른 PC에서 이어받기
 
-다른 PC에서 clone 해 이어서 작업하는 전체 절차는 `CONTINUE-ON-NEW-PC.md` 참고. 요약하면 clone → `SETUP.md` 설치 → 개인 시크릿 2개(`.env`, `config/coupang_widget.html`)만 준비 → `python -m src.pipeline`. 작업 후 `push.bat`으로 올리고 다른 PC에선 `git pull`로 받는다.
+다른 PC에서 clone 해 이어서 작업하는 전체 절차는 `CONTINUE-ON-NEW-PC.md` 참고. 요약하면 clone → `SETUP.md` 설치 → 개인 시크릿 2개(`.env`, `config/coupang_widget.html`)만 준비 → `제어판.bat` 실행. 일상 조작(발행·자동발행·설정·push·애드센스 페이지)은 모두 `제어판.bat` 메뉴에서 한다. 다른 PC에선 `git pull`로 받는다.
