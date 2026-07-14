@@ -1,4 +1,5 @@
 # 통합 제어판 — 콘솔 메뉴 하나로 발행·자동발행·설정·대시보드·push 를 관리한다 (한글 OK)
+import shutil
 import subprocess
 import sys
 
@@ -19,6 +20,7 @@ MENU = """
  [기타]
  11. 대시보드 열기          12. GitHub 올리기(push)
  13. 애드센스 필수 페이지 생성 (소개/개인정보/문의)
+ 14. Claude 로그인 (글 생성 엔진, PC마다 최초 1회)
   0. 종료
 =============================================================="""
 
@@ -41,6 +43,17 @@ def _push():
     subprocess.run(["git", "add", "."], cwd=str(ROOT))
     subprocess.run(["git", "commit", "-m", "update"], cwd=str(ROOT))
     subprocess.run(["git", "push"], cwd=str(ROOT))
+
+
+def _claude_login():
+    exe = shutil.which("claude")
+    if not exe:
+        print("claude 가 설치돼 있지 않습니다. 먼저: npm install -g @anthropic-ai/claude-code")
+        return
+    flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+    subprocess.Popen(["cmd", "/c", exe], creationflags=flags)
+    print("새 창에서 claude 를 열었습니다. 로그인이 안 돼 있으면 안내대로 로그인하세요.")
+    print("로그인은 이 PC에 저장되어, 이후 발행은 자동으로 인증을 사용합니다. (창은 닫아도 됨)")
 
 
 def main():
@@ -76,6 +89,8 @@ def main():
             _push()
         elif c == "13":
             pages.create_required_pages()
+        elif c == "14":
+            _claude_login()
         elif c == "0":
             break
         else:
