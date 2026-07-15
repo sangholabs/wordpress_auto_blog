@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 from . import banner_setup, pages, pipeline, schedule_task
-from .config import ROOT, get_settings
+from .config import ROOT, env, get_settings
 from .set_option import set_option
 
 MENU = """
@@ -23,6 +23,7 @@ MENU = """
  13. 애드센스 필수 페이지 생성 (소개/개인정보/문의)
  14. Claude 로그인 (글 생성 엔진, PC마다 최초 1회)
  15. 쿠팡 배너 설정 도우미 (가전디지털 카테고리)
+ 16. 대표 이미지 켜기/끄기
   0. 종료
 =============================================================="""
 
@@ -30,9 +31,18 @@ MENU = """
 def _status():
     s = get_settings()
     p, c, cp = s.get("publish", {}), s.get("content", {}), s.get("coupang", {})
-    print(f"현재 → 발행모드:{p.get('status')} | 하루:{p.get('posts_per_day')}편 | "
-          f"시각:{p.get('schedule_time')} | 배너:{c.get('banner_layout')}/{c.get('max_banners')}개 | "
-          f"로켓전용:{'켜짐' if cp.get('rocket_only') else '꺼짐'}")
+    if env("COUPANG_ACCESS_KEY") and env("COUPANG_SECRET_KEY"):
+        coupang = "API 상품카드"
+    elif (ROOT / "config" / "coupang_widget.html").exists():
+        coupang = "다이나믹 배너"
+    else:
+        coupang = "검색링크(수익 없음)"
+    on = lambda b: "켜짐" if b else "꺼짐"
+    print("── 현재 설정 ──────────────────────────────")
+    print(f" 발행모드:{p.get('status')} | 하루:{p.get('posts_per_day')}편 | 자동발행:매일 {p.get('schedule_time')}")
+    print(f" 배너:{c.get('banner_layout')}/{c.get('max_banners')}개 | 로켓전용:{on(cp.get('rocket_only'))} | 대표이미지:{on(c.get('featured_image', True))}")
+    print(f" 중복제거:{on(s.get('topic_queue', {}).get('one_per_product', True))} | 글엔진:{env('LLM_PROVIDER', 'claude_code')} | 쿠팡수익:{coupang}")
+    print("────────────────────────────────────────────")
 
 
 def _dashboard():
@@ -111,6 +121,8 @@ def main():
             _claude_login()
         elif c == "15":
             banner_setup.setup_banner()
+        elif c == "16":
+            set_option("featured_image", "true" if input("1) 켜기  2) 끄기 : ").strip() == "1" else "false")
         elif c == "0":
             break
         else:

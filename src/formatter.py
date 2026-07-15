@@ -197,9 +197,13 @@ def to_html(post: dict, for_wordpress: bool = False) -> str:
             html = _insert_block_after_h2(html, group, s.get("h2_groups", 3))
             html = _place(html, group)
         elif banners and layout == "per_h2":
-            # 소제목마다 서로 다른 배너 1개씩(중복 방지) + '추천 상품' 자리(토큰)엔 배너 1개
-            html = _insert_banners(html, banners, s.get("max_banners", 3))
-            html = html.replace("[[PRODUCTS]]", banners[0], 1)
+            # 총 max_banners 개: '추천 상품' 자리 1개 + 나머지는 소제목마다 분산(서로 다른 배너)
+            n = s.get("max_banners", 2)
+            if "[[PRODUCTS]]" in html:
+                html = html.replace("[[PRODUCTS]]", banners[0], 1)
+                html = _insert_banners(html, banners[1:], max(n - 1, 0))
+            else:
+                html = _insert_banners(html, banners, n)
         elif banners:
             html = _place(html, banners[0])
         else:

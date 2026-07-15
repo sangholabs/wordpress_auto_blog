@@ -7,7 +7,7 @@ content:
   coupang_disclosure: "이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다."
   featured_image: true     # 대표 이미지 자동 생성(Pollinations 무료). 끄려면 false
   banner_layout: per_h2    # per_h2(소제목마다 서로 다른 배너 1개씩) | grouped(한 자리에 모아) | grouped_h2(한 자리+소제목마다 그룹)
-  max_banners: 3           # per_h2: 배너 넣을 소제목 수(보유 배너 수만큼, 중복 안 함) / grouped: 그룹당 배너 수
+  max_banners: 2           # 글 전체 배너 수(보유 배너 개수 한도 내). 애드센스 심사 중엔 1~2 권장
   h2_groups: 3             # grouped_h2 전용
 
 seo:

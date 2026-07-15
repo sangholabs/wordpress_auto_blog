@@ -5,7 +5,7 @@ import sys
 from .config import ROOT
 
 SETTINGS = ROOT / "config" / "settings.yaml"
-ALLOWED = {"status", "posts_per_day", "banner_layout", "max_banners", "rocket_only", "schedule_time"}
+ALLOWED = {"status", "posts_per_day", "banner_layout", "max_banners", "rocket_only", "schedule_time", "featured_image"}
 
 
 def set_option(key: str, val: str):
