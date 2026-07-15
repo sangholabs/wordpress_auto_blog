@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import sys
 
-from . import pages, pipeline, schedule_task
+from . import banner_setup, pages, pipeline, schedule_task
 from .config import ROOT, get_settings
 from .set_option import set_option
 
@@ -22,6 +22,7 @@ MENU = """
  11. 대시보드 열기          12. GitHub 올리기(push)
  13. 애드센스 필수 페이지 생성 (소개/개인정보/문의)
  14. Claude 로그인 (글 생성 엔진, PC마다 최초 1회)
+ 15. 쿠팡 배너 설정 도우미 (가전디지털 카테고리)
   0. 종료
 =============================================================="""
 
@@ -108,6 +109,8 @@ def main():
             pages.create_required_pages()
         elif c == "14":
             _claude_login()
+        elif c == "15":
+            banner_setup.setup_banner()
         elif c == "0":
             break
         else:

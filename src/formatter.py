@@ -43,6 +43,9 @@ padding:14px;border-radius:8px;font-weight:bold;text-decoration:none;margin:24px
 .coupang-widget{{text-align:center;margin:24px 0;}}
 .coupang-group{{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:24px 0;}}
 .coupang-group .coupang-widget{{margin:0;}}
+.faq{{background:#f7f9fc;border-left:4px solid {pc};border-radius:8px;padding:12px 16px;margin:10px 0;}}
+.faq-q{{font-weight:bold;margin:0 0 6px;color:#222;}}
+.faq-a{{margin:0;color:#444;}}
 </style>"""
 
 
@@ -78,6 +81,7 @@ def _load_widgets() -> list[str]:
     if not widget.exists():
         return []
     raw = widget.read_text(encoding="utf-8").strip()
+    raw = re.sub(r"<!--.*?-->", "", raw, flags=re.DOTALL).strip()  # HTML 주석 제거([[PRODUCTS]] 포함 주석이 깨지는 문제 방지)
     if not raw:
         return []
     blocks = [b.strip() for b in re.split(r"(?m)^-{3,}\s*$", raw) if b.strip()]
@@ -120,17 +124,21 @@ def _from_cache(keyword: str) -> list[dict]:
 
 
 def _insert_banners(html: str, banners: list[str], max_n: int) -> str:
-    # 각 </h2> 뒤에 서로 다른 배너를 1개씩 삽입한다. 같은 배너 반복을 막기 위해
-    # 삽입 개수는 min(max_n, 보유 배너 수)로 제한한다(배너 1개면 1개만 들어감).
+    # 소제목 바로 밑이 아니라 각 섹션의 '첫 문단 뒤'에 배너를 넣어 더 자연스럽게 한다.
+    # 서로 다른 배너를 1개씩, 최대 min(max_n, 보유 배너 수)개.
     limit = min(max_n, len(banners))
     parts = html.split("</h2>")
     out, n = parts[0], 0
     for seg in parts[1:]:
-        out += "</h2>"
         if n < limit:
-            out += banners[n]
+            pos = seg.find("</p>")
+            if pos != -1:  # 첫 문단 뒤
+                pos += len("</p>")
+                seg = seg[:pos] + banners[n] + seg[pos:]
+            else:  # 문단이 없으면 소제목 바로 뒤
+                seg = banners[n] + seg
             n += 1
-        out += seg
+        out += "</h2>" + seg
     return out
 
 
@@ -148,23 +156,38 @@ def _insert_block_after_h2(html: str, block: str, n: int) -> str:
 
 
 def _place(html: str, block: str) -> str:
-    # [[PRODUCTS]] 토큰 자리에 넣고, 없으면 본문 끝에 붙인다.
+    # 첫 [[PRODUCTS]] 토큰 자리에만 넣고, 없으면 본문 끝에 붙인다. (남은 토큰은 to_html 말미에서 제거)
     if "[[PRODUCTS]]" in html:
-        return html.replace("[[PRODUCTS]]", block)
+        return html.replace("[[PRODUCTS]]", block, 1)
     return html + block
 
 
 def to_html(post: dict, for_wordpress: bool = False) -> str:
     s = get_settings()["content"]
     body_md = re.sub(r"^>\s*메타설명:.*$", "", post["markdown"], flags=re.MULTILINE)
+    body_md = re.sub(r"^#\s+.+$", "", body_md, count=1, flags=re.MULTILINE)  # 첫 H1(제목)은 WP 제목과 중복이라 제거
+    body_md = re.sub(r"(?m)^(\s*[-*])\s*\[[ xX]\]\s*", r"\1 ", body_md)  # 체크박스 문법 '- [ ]' → 일반 불릿
+    body_md = re.sub(r"(?m)^(?!\s*[-*]\s)(.+)\n([ \t]*[-*]\s)", r"\1\n\n\2", body_md)  # 목록 앞 빈 줄 보장(장단점 등)
+    body_md = re.sub(r"(?m)^([ \t]*[-*]\s.+)\n(?!\s*[-*]\s)(?=\S)", r"\1\n\n", body_md)  # 목록 뒤 빈 줄 보장
     html = md.markdown(body_md, extensions=["tables", "fenced_code"])
     html = _anchor_headings(html)
+    # FAQ 를 카드(질문/답변) 형태로 감싼다
+    html = re.sub(
+        r"<p><strong>(Q\.\s*.*?)</strong>\s*(A\.\s*.*?)</p>",
+        r'<div class="faq"><p class="faq-q">\1</p><p class="faq-a">\2</p></div>',
+        html, flags=re.DOTALL,
+    )
+    layout = s.get("banner_layout", "per_h2")
     products = search_products(post["keyword"]) or _from_cache(post["keyword"])
-    if products:
-        html = _place(html, _cards_html(products))  # 실상품 카드는 1회 삽입
+    if products and layout == "per_h2":
+        # 소제목마다 서로 다른 상품 카드 1개씩 + '추천 상품' 자리(토큰)엔 전체 그리드
+        cards = [_cards_html([p]) for p in products]
+        html = _insert_banners(html, cards, s.get("max_banners", 3))
+        html = html.replace("[[PRODUCTS]]", _cards_html(products), 1)
+    elif products:
+        html = _place(html, _cards_html(products))  # 한 자리 그리드
     else:
         banners = _wp_widgets(for_wordpress)
-        layout = s.get("banner_layout", "per_h2")
         group = f'<div class="coupang-group">{"".join(banners[: s.get("max_banners", 3)])}</div>'
         if banners and layout == "grouped":
             # 한 자리(토큰)에 배너 그룹 1개
@@ -174,9 +197,9 @@ def to_html(post: dict, for_wordpress: bool = False) -> str:
             html = _insert_block_after_h2(html, group, s.get("h2_groups", 3))
             html = _place(html, group)
         elif banners and layout == "per_h2":
-            # 소제목마다 서로 다른 배너 1개씩(중복 방지), 토큰 제거
+            # 소제목마다 서로 다른 배너 1개씩(중복 방지) + '추천 상품' 자리(토큰)엔 배너 1개
             html = _insert_banners(html, banners, s.get("max_banners", 3))
-            html = html.replace("[[PRODUCTS]]", "")
+            html = html.replace("[[PRODUCTS]]", banners[0], 1)
         elif banners:
             html = _place(html, banners[0])
         else:
@@ -185,6 +208,7 @@ def to_html(post: dict, for_wordpress: bool = False) -> str:
                 "다이나믹 배너(SETUP 5-A) 또는 스크래퍼/ API 를 설정하세요."
             )
             html = _place(html, _coupang_cta(post["keyword"]))
+    html = html.replace("[[PRODUCTS]]", "")  # 남은 토큰(본문 문장 속 중복 언급 등) 제거
     # 레거시 [[COUPANG]] 토큰 정리(구버전 초안 호환)
     html = re.sub(r"\[\[COUPANG(:[^\]]*)?\]\]", _coupang_cta(post["keyword"]), html)
     disclosure = f'<div class="disclosure">{s["coupang_disclosure"]}</div>'

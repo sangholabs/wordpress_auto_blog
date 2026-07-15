@@ -62,6 +62,10 @@ def publish_post(post: dict, status: str | None = None) -> dict:
         cid = _category_id(name)
         if cid:
             payload["categories"] = [cid]
+    from .images import generate_featured_media  # 순환 임포트 방지
+    media_id = generate_featured_media(kw)
+    if media_id:
+        payload["featured_media"] = media_id
     r = requests.post(f"{_base()}/posts", json=payload, auth=_auth(), timeout=30)
     if r.status_code >= 400 and "meta" in payload:
         payload.pop("meta")  # Rank Math meta 미지원 환경이면 빼고 재시도

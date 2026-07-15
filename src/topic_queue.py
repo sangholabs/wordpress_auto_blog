@@ -34,14 +34,22 @@ def score_keyword(kw: str) -> int:
 
 
 def _root(kw: str) -> str:
-    # 주제의 '상품 뿌리 단어'(맨 앞 상품명 토큰)를 뽑는다. 유사 주제 중복 제거용.
+    # 주제의 '상품 뿌리'를 뽑는다(유사 중복 제거용). 띄어쓰기를 없애고 의도어·연도를 제거해
+    # "무선청소기"와 "무선 청소기 비교"가 같은 뿌리로 묶이게 한다.
     intent, _, _ = _score_cfg()
-    skip = set(intent) | {"2024", "2025", "2026"}
-    for tok in kw.lower().split():
-        t = tok.replace("년", "")
-        if t and t not in skip and not t.isdigit():
-            return t
-    return kw.lower()
+    t = kw.lower().replace(" ", "")
+    for w in list(intent) + ["추천순위", "2024", "2025", "2026", "년"]:
+        t = t.replace(w, "")
+    return t or kw.lower().replace(" ", "")
+
+
+def _same_product(a: str, b: str) -> bool:
+    # 두 뿌리가 같은 상품인지. 수식어가 붙은 세부 종류(글라스에어프라이어=에어프라이어)를 묶되,
+    # 로봇청소기/무선청소기처럼 서로 포함 안 되는 건 별개로 둔다.
+    if a == b:
+        return True
+    short, long = sorted((a, b), key=len)
+    return len(short) >= 4 and (long.startswith(short) or long.endswith(short))
 
 
 def _published_set() -> set[str]:
@@ -62,12 +70,12 @@ def build() -> list[dict]:
     queue.sort(key=lambda x: x["score"], reverse=True)
     if get_settings().get("topic_queue", {}).get("one_per_product", True):
         # 같은 상품 뿌리 단어는 최고 점수 1개만 남긴다(유사 중복 글 방지)
-        seen, deduped = set(), []
+        seen, deduped = [], []
         for t in queue:
             r = _root(t["keyword"])
-            if r in seen:
+            if any(_same_product(r, s) for s in seen):
                 continue
-            seen.add(r)
+            seen.append(r)
             deduped.append(t)
         queue = deduped
     QUEUE_FILE.write_text(
