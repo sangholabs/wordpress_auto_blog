@@ -42,7 +42,8 @@ def _open():
 
 def _open_cdp(port: int | None = None):
     # SH님이 직접 띄운 실제 Chrome 에 연결한다(가장 확실한 봇 우회).
-    # 사전: chrome.exe --remote-debugging-port=<port> --user-data-dir="...data\chrome-profile" 로 실행 후 수동 로그인.
+    # 사전: 실제 Chrome을 remote-debugging-port와 전용 user-data-dir로 실행 후 수동 로그인.
+    # 운영체제별 실행 명령은 SETUP.md 9단계를 참고한다.
     p = sync_playwright().start()
     browser = p.chromium.connect_over_cdp(f"http://localhost:{port or _cdp_port()}")
     ctx = browser.contexts[0]

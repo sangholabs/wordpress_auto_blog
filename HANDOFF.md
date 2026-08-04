@@ -1,4 +1,4 @@
-# 핸드오프 (2026-06-30 기준)
+# 핸드오프 (2026-08-04 기준)
 
 다음 세션(사람/에이전트)이 바로 이어받기 위한 요약. 상세 결정 근거는 `context-notes.md`, 할 일은 `checklist.md` 참고.
 
@@ -41,7 +41,7 @@ WordPress(설치형, 카페24) 블로그에 쿠팡 파트너스 + 애드센스 �
 
 ## 5. 실행
 
-가장 쉬운 방법은 **`제어판.bat` 더블클릭** → 콘솔 메뉴로 발행·자동발행·설정·대시보드·push 모두 조작(`src/menu.py`). 대시보드(`src/dashboard.py`)로 브라우저 조작도 가능(메뉴 11번).
+가장 쉬운 방법은 Windows에서 **`제어판.bat`**, macOS 터미널에서 **`./control.sh`**를 실행하는 것이다. 동일한 콘솔 메뉴로 발행·자동발행·설정·대시보드·push를 조작한다. 대시보드(`src/dashboard.py`)로 브라우저 조작도 가능하다(메뉴 11번).
 
 명령줄로도 가능.
 ```powershell
@@ -49,7 +49,15 @@ WordPress(설치형, 카페24) 블로그에 쿠팡 파트너스 + 애드센스 �
 .\.venv\Scripts\python.exe -m src.pipeline --refresh  # 키워드 새로 수집 후
 .\.venv\Scripts\python.exe -m src.set_option <key> <value>   # 설정 변경(status/posts_per_day/banner_layout/max_banners/rocket_only/schedule_time)
 ```
-자동화: 메뉴 3번(또는 `python -m src.schedule_task on`)이 `run.bat`을 매일 `schedule_time`에 실행하도록 등록. 루트 .bat 은 `제어판.bat`(메인)·`run.bat`(스케줄러 전용) 둘뿐.
+자동화: 메뉴 3번(또는 `python -m src.schedule_task on`)이 매일 `schedule_time`에 실행하도록 등록한다. Windows는 작업 스케줄러와 `run.bat`, macOS는 사용자 LaunchAgent와 `.venv/bin/python` 절대 경로를 사용한다. macOS 수동 실행은 `run.sh`, 상태 확인은 `python -m src.schedule_task status`다.
+
+## 5-1. macOS 지원 (2026-08-04)
+
+- Apple Silicon/Intel 공통 Homebrew + Python 3.12 설치 절차를 `SETUP.md`에 추가했다.
+- `src/schedule_task.py`가 Windows `schtasks`와 macOS `launchd`를 플랫폼별로 처리한다.
+- launchd plist: `~/Library/LaunchAgents/com.wordpress-auto-blog.pipeline.plist`.
+- 메뉴의 Claude 로그인과 대시보드 실행도 macOS 터미널/백그라운드 방식으로 분기한다.
+- 실제 LLM/WordPress 발행 없이 예약 명령과 plist 구조를 검증하는 테스트를 추가했다.
 
 ## 6. 수익화 현황 / 단계 전략
 
@@ -68,7 +76,7 @@ WordPress(설치형, 카페24) 블로그에 쿠팡 파트너스 + 애드센스 �
 ## 8. 다음 할 일 (우선순위)
 
 1. 며칠 draft 검수 → `settings.yaml` publish.status=publish 로 전환.
-2. 작업 스케줄러 등록(완전 자동): `schtasks /create /tn "blog-auto" /tr "C:\Users\agent\Desktop\blog\run.bat" /sc daily /st 09:00`.
+2. 자동발행 등록(완전 자동): Windows/macOS 모두 제어판 3번 또는 `python -m src.schedule_task on`. 직접 `schtasks`/`launchctl` 명령을 작성하지 않는다.
 3. 글 30편 이상 축적 후 애드센스 신청. 판매금액 15만원 달성 시 .env 에 쿠팡 API 키 입력 → 실상품 카드 자동 전환.
 4. 고도화(선택): 게시 후 구글 색인 요청, 내부링크 자동 연결, 대표 이미지 자동 생성, 제목 A/B 성과 피드백.
 

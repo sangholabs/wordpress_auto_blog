@@ -1,123 +1,274 @@
-# 설치 가이드 (Windows, 신규 PC 기준)
+# 설치 가이드 (Windows / macOS)
 
-전역 도구는 PC에 설치하고, 프로젝트 의존성은 `.venv`에 격리한다. 그래야 GitHub에 올렸을 때 다른 PC에서 clone→설치만으로 동일하게 동작한다. 각 단계에서 빠뜨린 설정이 있으면 실행 시 터미널이 무엇을 채워야 하는지 안내한다.
+전역 도구는 PC에 설치하고 Python 의존성은 프로젝트 `.venv`에 격리한다. Windows와 macOS 모두 같은 Python 모듈을 사용하고, 실행·자동발행 방식만 운영체제에 맞게 선택한다.
 
-## 0. clone 후 빠른 시작 (순서 요약)
+## 0. 빠른 시작
 
-1. 전역 설치 — Python 3.11+, Node.js LTS, Git (1단계).
-2. 프로젝트 의존성 — venv 생성 + 설치 (2단계).
-3. 글 생성 엔진 — Claude Code 설치 + 로그인, 또는 다른 LLM 선택 (3단계).
-4. 환경변수 — `copy .env.example .env` 후 값 입력 (4단계).
-4-1. 본인 니치 — `config/categories.yaml`의 니치·카테고리·seed 키워드를 본인 주제로 수정.
-5. 쿠팡 — 계정 상태에 맞게 배너(iframe) 또는 API (5단계).
-6. WordPress — Application Password 입력 (6단계).
-7. 애드센스 필수 페이지 — SITE_* 채우고 제어판 13번 (7단계).
-8. 실행 / 자동화 — `제어판.bat` 하나로 발행·자동발행·설정 (8단계).
+1. Python 3.12, Node.js LTS, Git을 설치한다.
+2. `.venv`를 만들고 `requirements.txt`와 Playwright Chromium을 설치한다.
+3. Claude Code를 설치·로그인하거나 다른 LLM provider를 설정한다.
+4. `.env.example`을 `.env`로 복사하고 WordPress 등 필요한 값을 채운다.
+5. `config/categories.yaml`의 니치와 seed 키워드를 확인한다.
+6. 쿠팡 배너/API와 WordPress Application Password를 준비한다.
+7. Windows는 `제어판.bat`, macOS는 `./control.sh`를 실행한다.
 
-## 1. 전역 설치 (PC에 1회)
+## 1. 전역 도구 설치
+
+### Windows PowerShell
 
 ```powershell
 winget install -e --id Python.Python.3.12
 winget install -e --id OpenJS.NodeJS.LTS
 winget install -e --id Git.Git
 ```
-설치 후 **새 터미널**을 열어야 PATH가 반영된다. 확인.
+
+설치 후 새 터미널에서 확인한다.
+
 ```powershell
 python --version
 node -v
 git --version
 ```
 
-## 2. 프로젝트 의존성 (이 폴더 안에 격리)
+### macOS 터미널
+
+[Homebrew](https://brew.sh/)를 먼저 설치한 뒤 다음을 실행한다. Apple Silicon과 Intel Mac 모두 `brew`가 제공하는 명령 검색 경로를 사용하므로 저장소 코드에는 Homebrew 경로를 고정하지 않는다.
+
+```zsh
+brew install python@3.12 node git
+python3.12 --version
+node -v
+git --version
+```
+
+## 2. 프로젝트 가상환경과 의존성
+
+### Windows PowerShell
 
 ```powershell
 cd C:\Users\<사용자>\Desktop\blog
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 playwright install chromium
 ```
-`Activate.ps1` 에서 "스크립트 실행 불가" 오류가 나면 한 번만.
+
+`Activate.ps1` 실행이 차단되면 한 번만 실행한다.
+
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
+### macOS zsh
+
+```zsh
+cd /path/to/wordpress_auto_blog
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+playwright install chromium
+```
+
+실행 권한이 유실된 경우에만 `chmod +x control.sh run.sh`를 한 번 실행한다.
+
 ## 3. 글 생성 엔진 (LLM)
 
-기본값은 구독 인증을 쓰는 Claude Code다(키 불필요).
-```powershell
+기본값은 로컬 Claude Code CLI의 구독 인증을 사용한다.
+
+```sh
 npm install -g @anthropic-ai/claude-code
-claude            # 처음 실행 시 브라우저로 구독 로그인
-claude -p "안녕"  # 답변이 나오면 정상
+claude
+claude -p "안녕"
 ```
-구독 대신 다른 LLM을 쓰려면 `.env` 의 `LLM_PROVIDER` 를 `gemini` 또는 `anthropic` 으로 바꾸고 해당 키를 넣는다.
+
+macOS에서 `claude`를 찾지 못하면 새 터미널을 열고 `command -v claude`로 설치 경로가 PATH에 포함됐는지 확인한다. 자동발행 등록 시 현재 터미널의 PATH가 launchd 설정에 저장되므로 Node/Claude 설치 경로를 바꾼 뒤에는 제어판 3번으로 다시 등록한다.
+
+구독 대신 다른 LLM을 사용하려면 `.env`의 `LLM_PROVIDER`를 `gemini` 또는 `anthropic`으로 바꾸고 해당 API 키를 입력한다.
 
 ## 4. 환경변수
+
+Windows:
 
 ```powershell
 copy .env.example .env
 ```
-`.env` 를 열어 필요한 블록만 채운다. 각 항목의 [필수]/[선택] 설명은 `.env.example` 주석 참고. `.env` 는 커밋되지 않는다.
 
-## 5. 쿠팡 파트너스 설정 (계정 상태에 따라 둘 중 하나)
+macOS:
 
-쿠팡 파트너스 Open API 는 **최종 승인(누적 판매금액 15만 원) 이후에만** 발급된다. 코드는 자동으로 알맞은 방식을 쓴다(API 키 있으면 상품카드, 없으면 배너, 둘 다 없으면 검색 링크).
+```zsh
+cp .env.example .env
+```
 
-### A. 아직 최종 승인 전 (대부분의 신규 계정) → 다이나믹 배너
-1. 쿠팡 파트너스 → "링크 생성" → "다이나믹 배너" → 배너 생성 → **iframe 코드** 복사. (script 버전은 NinjaFirewall 등 보안 플러그인에 막힐 수 있어 iframe 권장)
-2. `config\coupang_widget.example.html` 을 같은 폴더에 `coupang_widget.html` 로 복사.
-3. 그 파일 맨 아래에 iframe 을 붙여넣고 저장. 여러 개는 `---` 한 줄로 구분하면 소제목마다 다른 배너가 들어간다. (개인 추적ID 포함이라 `.gitignore` 처리됨)
-4. 준회원도 링크·수익이 가능하므로, 이렇게 운영하며 판매금액 15만 원을 채운다.
+`.env`에서 필요한 블록만 채운다. 이 파일은 gitignore 대상이다.
 
-### B. 최종 승인 완료 → Open API 상품카드 (자동 전환)
-1. 쿠팡 파트너스 → 상단 "Tools" → "파트너스 API" → Access/Secret Key 발급.
-2. `.env` 에 `COUPANG_ACCESS_KEY`, `COUPANG_SECRET_KEY`, `COUPANG_PARTNERS_TAG` 입력.
-3. 코드 수정 없이 다음 글 생성부터 실상품 카드로 자동 전환된다.
+### 4-A. 국가정책·티스토리 작업실 키
 
-## 6. WordPress 게시 자격증명 (설치형 WordPress.org, 카페24 등)
+정책 작업실을 사용할 때만 다음 두 키를 추가한다.
 
-설치형 워드프레스는 WordPress.com 계정이 아니라 **사이트 자체의 Application Password** 로 인증한다(WordPress 5.6+, https 필요).
+1. [공공데이터포털의 대한민국 공공서비스(혜택) 정보](https://www.data.go.kr/data/15113968/openapi.do)에서 활용신청한다.
+2. `인증키 발급현황`에 표시되는 **일반 인증키**를 `.env`의 `DATA_GO_KR_API_KEY`에 그대로 입력한다. 현재 포털의 단일 키와 기존 Encoding/Decoding 키 형식을 모두 지원한다.
+3. OpenAI API 대시보드에서 유료 API 키를 발급해 `OPENAI_API_KEY`에 입력한다. ChatGPT/Codex 구독과 API 결제는 별도다.
 
-1. 워드프레스 관리자 로그인 → 좌측 "사용자(Users)" → 본인 "프로필(Profile)".
-2. 아래로 스크롤 → "Application Passwords(애플리케이션 비밀번호)" 섹션 → 이름(예: blog-bot) 입력 → "Add New Application Password".
-3. 생성된 비밀번호(`xxxx xxxx xxxx xxxx` 형식)를 복사한다. **이 화면을 벗어나면 다시 못 보니 즉시 복사.**
-4. `.env` 에 입력한다.
-   ```
-   WP_SITE_URL=https://본인블로그주소
-   WP_USERNAME=관리자아이디
-   WP_APP_PASSWORD=복사한 비밀번호
-   ```
-5. 자격증명이 맞는지 점검한다.
-   ```powershell
-   .\.venv\Scripts\python.exe -m src.wp_auth
-   ```
-   "인증 성공" 이 뜨면 OK.
+```dotenv
+DATA_GO_KR_API_KEY=공공데이터포털_일반_인증키
+OPENAI_API_KEY=OpenAI_API_키
+```
 
-> "Application Passwords" 섹션이 안 보이면 사이트가 https 가 아니거나 보안 플러그인이 막은 것이다. 알려달라.
+키를 채운 뒤 터미널 제어판의 `17. 정책·티스토리 작업실` 또는 웹 대시보드의 정책 작업실을 연다. 첫 사용 순서는 다음과 같다.
 
-발행 테스트(초안 상태로 안전하게).
+```sh
+python -m src.policy_cli regions 서울 성남
+python -m src.policy_cli collect
+python -m src.policy_cli list
+python -m src.policy_cli generate 후보ID
+python -m src.policy_cli generate-recommended --count 1
+```
+
+후보 수집은 보조금24 첫 페이지를 그대로 보여주지 않는다. 여러 페이지와 근로자·가구·연령·업종 지원조건을 함께 검사하고, 30~50대 주부·직장인 생활과 무관한 전문업종 정책은 자동으로 숨긴다. `list`는 추천 후보만 보여주며 `generate-recommended`를 실행하면 상위 후보를 자동 선택해 생성한다. 이 생성 명령부터 LLM과 이미지 API가 호출될 수 있다.
+
+정책 글은 자동 게시되지 않는다. `output/tistory/YYYY/MM/DD/` 아래의 `00_게시가이드.txt`를 따라 티스토리 HTML 모드에 붙여넣고 이미지를 직접 업로드한다. OpenAI 이미지 생성이 실패해도 글 패키지는 `ready_with_warnings` 상태로 남으며, 작업실에서 이미지만 다시 생성할 수 있다.
+
+## 5. 쿠팡 파트너스 설정
+
+쿠팡 파트너스 Open API는 누적 판매금액 15만 원 기준의 최종 승인 후 사용할 수 있다. 코드는 API 키가 있으면 상품카드, 없으면 배너, 둘 다 없으면 검색 링크를 사용한다.
+
+### 승인 전: 다이나믹 배너
+
+1. 쿠팡 파트너스에서 다이나믹 배너의 iframe 코드를 만든다. script 버전은 WordPress 보안 플러그인에 차단될 수 있으므로 iframe을 권장한다.
+2. `config/coupang_widget.example.html`을 `config/coupang_widget.html`로 복사한다.
+3. iframe을 붙여넣는다. 여러 배너는 `---` 한 줄로 구분한다.
+
+복사 명령:
+
 ```powershell
-.\.venv\Scripts\python.exe -m src.wp_publish output\draft_에어프라이어-추천-순위.md
-```
-`config\settings.yaml` 의 `publish.status` 가 기본 `draft` 라, 워드프레스 관리자에서 검수 후 직접 발행한다. 익숙해지면 `publish` 로 바꿔 완전 자동 발행한다.
-
-## 7. 애드센스 필수 페이지 (최초 1회)
-
-`.env` 의 `SITE_NAME`/`SITE_OWNER`/`SITE_EMAIL` 을 채운 뒤 제어판(8단계) **13번** 을 실행하면 소개·개인정보처리방침·문의 페이지가 자동 생성된다. 그 뒤 워드프레스 관리자 → 외모 → 메뉴에서 세 페이지를 메뉴에 추가한다(애드센스 필수).
-
-## 8. 실행 / 자동화 — 제어판 하나로
-
-일상 조작은 **`제어판.bat` 더블클릭** → 콘솔 메뉴로 한다.
-
-```
-1 지금 1편 발행   2 키워드 새로 수집 후 발행
-3 자동발행 켜기   4 끄기   5 시각 변경
-6 발행모드  7 하루 편수  8 배너 레이아웃  9 배너 개수  10 로켓 전용
-11 대시보드(브라우저)  12 push  13 애드센스 필수 페이지  14 Claude 로그인
+# Windows
+copy config\coupang_widget.example.html config\coupang_widget.html
 ```
 
-- **3번(자동발행 켜기)** = `run.bat` 을 매일 `schedule_time`(기본 09:00)에 실행하도록 Windows 작업 스케줄러에 등록. 창을 닫아도 유지되며, PC 가 그 시각에 켜져 있어야 발행된다.
-- 브라우저 UI 로 조작하려면 **11번(대시보드)** → http://localhost:5000.
-- 명령줄도 가능: `.\.venv\Scripts\python.exe -m src.pipeline` (또는 `--refresh`).
-- 실행 로그 `logs\pipeline.log`, 발행 이력 `data\published.json`(중복 발행 방지).
-- 루트 .bat 은 `제어판.bat`(메인)·`run.bat`(스케줄러 전용) 둘뿐.
+```zsh
+# macOS
+cp config/coupang_widget.example.html config/coupang_widget.html
+```
+
+### 최종 승인 후: Open API
+
+`.env`에 `COUPANG_ACCESS_KEY`, `COUPANG_SECRET_KEY`, `COUPANG_PARTNERS_TAG`를 입력하면 다음 글부터 API 상품카드로 전환된다.
+
+## 6. WordPress 게시 자격증명
+
+설치형 WordPress 5.6+ 사이트에서 HTTPS를 사용해야 한다. WordPress 관리자 → 사용자 → 프로필 → Application Passwords에서 비밀번호를 만들고, 다시 표시되지 않으므로 즉시 복사해 `.env`에 입력한다.
+
+```dotenv
+WP_SITE_URL=https://본인블로그주소
+WP_USERNAME=관리자아이디
+WP_APP_PASSWORD=복사한비밀번호
+```
+
+Application Passwords 섹션이 보이지 않으면 HTTPS 적용 여부와 보안 플러그인의 REST/Application Password 차단 설정을 확인한다.
+
+인증 점검:
+
+```powershell
+# Windows
+.\.venv\Scripts\python.exe -m src.wp_auth
+```
+
+```zsh
+# macOS
+./.venv/bin/python -m src.wp_auth
+```
+
+발행 테스트는 `config/settings.yaml`의 `publish.status`를 `draft`로 둔 뒤 실행한다.
+
+```powershell
+# Windows
+.\.venv\Scripts\python.exe -m src.wp_publish output\draft_파일명.md
+```
+
+```zsh
+# macOS
+./.venv/bin/python -m src.wp_publish output/draft_파일명.md
+```
+
+## 7. 애드센스 필수 페이지
+
+`.env`의 `SITE_NAME`, `SITE_OWNER`, `SITE_EMAIL`을 채운 뒤 제어판 13번을 실행한다. 생성 후 WordPress 관리자에서 소개·개인정보처리방침·문의 페이지를 메뉴에 추가한다.
+
+## 8. 실행과 자동발행
+
+### 터미널 제어판
+
+```powershell
+# Windows
+.\제어판.bat
+```
+
+```zsh
+# macOS
+./control.sh
+```
+
+주요 메뉴는 수동 발행, 키워드 갱신, 자동발행 등록·해제, 설정 변경, 대시보드, Claude 로그인이다.
+
+```text
+1 지금 발행  2 키워드 갱신 후 발행
+3 자동발행 켜기  4 끄기  5 시각 변경
+6 발행모드  7 하루 편수  8 배너 레이아웃  9 배너 개수
+10 로켓 전용  11 대시보드  12 GitHub push
+13 애드센스 필수 페이지  14 Claude 로그인
+15 쿠팡 배너 도우미  16 대표 이미지 켜기/끄기
+```
+
+직접 실행:
+
+```powershell
+# Windows
+.\.venv\Scripts\python.exe -m src.pipeline
+.\.venv\Scripts\python.exe -m src.pipeline --refresh
+```
+
+```zsh
+# macOS
+./run.sh
+./run.sh --refresh
+```
+
+자동발행은 제어판 3번으로 켜고 4번으로 끈다. Windows는 작업 스케줄러의 `blog-auto`, macOS는 사용자 LaunchAgent의 `com.wordpress-auto-blog.pipeline`을 사용한다. macOS 작업은 사용자가 로그인한 세션에서 동작하며 등록 즉시 발행하지 않는다.
+
+브라우저 UI는 제어판 11번에서 열며 기본 주소는 `http://localhost:5000`이다.
+
+상태 확인과 직접 제어:
+
+```sh
+python -m src.schedule_task status
+python -m src.schedule_task on
+python -m src.schedule_task off
+```
+
+macOS plist는 `~/Library/LaunchAgents/com.wordpress-auto-blog.pipeline.plist`에 생성된다. 실행 로그는 `logs/pipeline.log`, 대시보드 로그는 `logs/dashboard.log`, 발행 이력은 `data/published.json`에 저장된다.
+
+## 9. 선택 기능: 쿠팡 Playwright/CDP
+
+일반 배너/API 운영에는 필요하지 않다. 승인 전 직링크 스크래퍼를 사용할 때만 실제 Google Chrome을 설치한다.
+
+```powershell
+# Windows
+winget install -e --id Google.Chrome
+& "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="$PWD\data\chrome-profile"
+```
+
+```zsh
+# macOS
+brew install --cask google-chrome
+open -na "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="$PWD/data/chrome-profile"
+```
+
+Chrome에서 쿠팡 파트너스에 로그인한 뒤 별도 터미널에서 실행한다.
+
+```sh
+python -m src.coupang_scraper --run --cdp
+```
+
+빠른 반복은 쿠팡 anti-bot 제한을 유발할 수 있으므로 이 기능은 보조 경로로만 사용한다.

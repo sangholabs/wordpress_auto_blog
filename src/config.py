@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 if not (ROOT / ".env").exists():
-    print("[안내] .env 가 없습니다. `copy .env.example .env` 후 값을 채우세요. (SETUP.md 참고)")
+    print("[안내] .env 가 없습니다. Windows는 `copy`, macOS는 `cp .env.example .env` 후 값을 채우세요. (SETUP.md 참고)")
 load_dotenv(ROOT / ".env")
 
 

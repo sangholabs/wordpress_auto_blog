@@ -2,6 +2,14 @@
 
 작업 중 내린 결정과 근거를 계속 누적한다. 다음 세션(사람/에이전트)이 재추론 없이 이어받기 위함이다.
 
+## 2026-08-04 macOS 터미널 지원
+
+- 결정: Windows 지원을 유지하면서 macOS를 동등한 실행 대상으로 추가한다. 핵심 파이프라인은 공용으로 두고 예약·프로세스 실행만 플랫폼별로 분기한다.
+- macOS 예약 방식: 시스템 전역 권한이 필요한 LaunchDaemon이 아닌 사용자 LaunchAgent. `StartCalendarInterval`로 매일 실행하고 등록 즉시 실행하는 `RunAtLoad`는 사용하지 않는다.
+- launchd는 터미널의 PATH를 자동 상속하지 않으므로 등록 시 현재 PATH를 plist에 기록한다. Node/Claude 설치 경로가 바뀌면 사용자가 다시 등록해야 한다.
+- 공식 진입점: Windows `제어판.bat`/`run.bat`, macOS `control.sh`/`run.sh`. 예약 공통 API는 `python -m src.schedule_task on|off|status`다.
+- 자동 테스트에서는 실제 WordPress 게시나 LLM 호출을 하지 않고, Windows 명령·macOS plist·launchctl 호출을 모킹해 검증한다.
+
 ## 2026-06-30 초기 설계
 
 ### 니치

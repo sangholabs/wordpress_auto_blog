@@ -19,7 +19,7 @@ publish:
   status: publish          # 즉시 공개 발행 (검수 필요 시 draft 로 되돌림)
   schedule: true           # 예약발행 사용
   posts_per_day: 3
-  schedule_time: "09:00"   # 자동발행 시각(작업 스케줄러). 자동발행_켜기.bat 이 이 값을 사용
+  schedule_time: "09:00"   # 자동발행 시각(Windows 작업 스케줄러 / macOS launchd)
 
 llm:
   anthropic_model: "claude-sonnet-4-6"   # LLM_PROVIDER=anthropic 일 때
@@ -53,6 +53,22 @@ coupang:
   api_timeout_sec: 15      # 쿠팡 API 타임아웃
   scraper_port: 9222       # 스크래퍼 CDP 연결 포트(디버깅 Chrome)
   wp_banner_shortcode: ""  # iframe 배너는 방화벽에 안 막혀 직접 삽입한다. (script 배너로 막히면 "[coupang_dynamic_banner]" 로 숏코드 사용)
+
+# 국가정책 수집 → 검토 → 티스토리 수동 게시 패키지 생성 전용 설정.
+# 기존 WordPress 자동발행 설정과 서로 독립적으로 동작한다.
+policy_workspace:
+  scan_page_size: 500      # 보조금24 페이지당 조회 수
+  scan_limit: 5000         # 첫 페이지만 보지 않고 이 범위까지 고르게 검사
+  use_support_conditions: true  # 근로자·가구·연령·전문업종 공식 조건을 선별에 사용
+  recommended_limit: 50    # 자동 추천 목록에 남길 최대 후보 수
+  detail_limit: 30         # 추천 상위 후보 중 상세정보를 추가 조회할 수
+  minimum_score: 20        # 30~50대 생활밀착 추천 최소 점수
+  source_cache_days: 7     # 공식 출처 재확인 실패 시 허용할 캐시 최대 일수
+  image_provider: openai   # openai 기본, Pollinations는 글/이미지별 수동 선택
+  image_model: "gpt-image-2"
+  image_quality: medium
+  coupang_layout: per_h2
+  coupang_max_blocks: 2
 
 guardrails:
   monthly_llm_budget_usd: 10

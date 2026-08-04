@@ -1,11 +1,10 @@
 # 생성된 마크다운을 가독성 높은 HTML로 변환한다 — 목차·쿠팡 고지/링크·반응형 스타일 삽입
-import json
 import re
 
 import markdown as md
 
-from .config import ROOT, env, get_settings
-from .coupang import search_products
+from .config import ROOT, get_settings
+from . import affiliate
 
 OUTPUT_DIR = ROOT / "output"
 
@@ -70,22 +69,11 @@ def _anchor_headings(html: str) -> str:
 
 
 def _coupang_cta(keyword: str) -> str:
-    tag = env("COUPANG_PARTNERS_TAG", "YOUR_TAG")
-    url = f"https://www.coupang.com/np/search?q={keyword}&subId={tag}"
-    return f'<a class="coupang-cta" href="{url}" target="_blank" rel="nofollow sponsored">👉 쿠팡에서 "{keyword}" 최저가·후기 보기</a>'
+    return affiliate.coupang_cta(keyword).replace('style="display:block;', 'class="coupang-cta" style="display:block;')
 
 
 def _load_widgets() -> list[str]:
-    # config/coupang_widget.html 의 배너들을 읽는다. '---' 한 줄로 여러 배너를 구분할 수 있다.
-    widget = ROOT / "config" / "coupang_widget.html"
-    if not widget.exists():
-        return []
-    raw = widget.read_text(encoding="utf-8").strip()
-    raw = re.sub(r"<!--.*?-->", "", raw, flags=re.DOTALL).strip()  # HTML 주석 제거([[PRODUCTS]] 포함 주석이 깨지는 문제 방지)
-    if not raw:
-        return []
-    blocks = [b.strip() for b in re.split(r"(?m)^-{3,}\s*$", raw) if b.strip()]
-    return [f'<div class="coupang-widget">{b}</div>' for b in blocks]
+    return affiliate.load_widgets()
 
 
 def _wp_widgets(for_wordpress: bool) -> list[str]:
@@ -98,29 +86,11 @@ def _wp_widgets(for_wordpress: bool) -> list[str]:
 
 
 def _cards_html(products: list[dict]) -> str:
-    cards = ""
-    for p in products:
-        price = f'{int(p["price"]):,}원' if p.get("price") else ""
-        img = (
-            f'<img src="{p["image"]}" alt="{p["name"]}" loading="lazy">'
-            if p.get("image")
-            else ""
-        )
-        cards += (
-            f'<div class="pcard"><a href="{p["url"]}" target="_blank" rel="nofollow sponsored">'
-            f'{img}<div class="pname">{p["name"]}</div>'
-            f'<div class="pprice">{price}</div>'
-            f'<span class="pbtn">최저가 보기</span></a></div>'
-        )
-    return f'<div class="products">{cards}</div>'
+    return affiliate.cards_html(products)
 
 
 def _from_cache(keyword: str) -> list[dict]:
-    # coupang_scraper 가 만든 data/product_links.json 캐시에서 키워드별 직링크를 읽는다.
-    cache = ROOT / "data" / "product_links.json"
-    if not cache.exists():
-        return []
-    return json.loads(cache.read_text(encoding="utf-8")).get(keyword, [])
+    return affiliate.from_cache(keyword)
 
 
 def _insert_banners(html: str, banners: list[str], max_n: int) -> str:
@@ -178,7 +148,7 @@ def to_html(post: dict, for_wordpress: bool = False) -> str:
         html, flags=re.DOTALL,
     )
     layout = s.get("banner_layout", "per_h2")
-    products = search_products(post["keyword"]) or _from_cache(post["keyword"])
+    products = affiliate.products_for(post["keyword"])
     if products and layout == "per_h2":
         # 소제목마다 서로 다른 상품 카드 1개씩 + '추천 상품' 자리(토큰)엔 전체 그리드
         cards = [_cards_html([p]) for p in products]

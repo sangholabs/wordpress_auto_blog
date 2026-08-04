@@ -2,6 +2,8 @@
 
 WordPress 블로그에 쿠팡 파트너스 + 구글 애드센스 수익형 콘텐츠를 자동으로 기획·생성·게시하는 독립 프로젝트다. clone 후 `.env`만 채우면 다른 PC에서도 바로 동작하도록 설계한다.
 
+기존 WordPress 자동발행과 별도로 **국가정책·티스토리 작업실**을 제공한다. 30~50대 주부·직장인이 놓치기 쉬운 정부 혜택을 공식 출처에서 수집하고, 검토한 정책만 글·대표 이미지·본문 이미지·출처 검증 파일로 묶어 티스토리에 수동 게시할 수 있다.
+
 ## 핵심 원칙
 
 - 반복적이고 일관된 작업(키워드 수집, 포맷팅, 게시)은 순수 Python/JS로 처리해 **토큰을 쓰지 않는다.**
@@ -30,9 +32,15 @@ blog/
 └─ requirements.txt
 ```
 
-## 설치·실행
+## 설치·실행 (Windows / macOS)
 
-`SETUP.md` 참고. 전역(Python/Node)은 PC에 설치, 의존성은 프로젝트 `.venv`에 격리 설치한다.
+`SETUP.md` 참고. 전역 Python 3.12/Node/Git은 PC에 설치하고, Python 의존성은 프로젝트 `.venv`에 격리한다.
+
+- Windows 터미널 제어판: `제어판.bat`
+- macOS 터미널 제어판: `./control.sh`
+- Windows 예약 실행: 작업 스케줄러(`schtasks`)
+- macOS 예약 실행: 사용자 LaunchAgent(`launchd`)
+- 공통 직접 실행: 가상환경 Python으로 `python -m src.pipeline`
 
 ## 진행 상황
 
@@ -53,6 +61,7 @@ clone 후에는 `SETUP.md`의 순서대로 본인 환경·자격증명만 채우
 코드 수정 없이 `config/settings.yaml`(동작·디자인)과 `.env`(키·포트)에서 조정한다. 각 항목엔 주석이 달려 있다.
 
 - content — 최소 분량, 목차, 쿠팡 고지문구, 배너 레이아웃(per_h2/grouped/grouped_h2)·개수.
+- policy_workspace — 보조금24 수집 수, 7일 출처 캐시, GPT Image 모델·품질, 정책 글 쿠팡 배너 수.
 - publish — 발행 모드(publish/draft), 하루 편수, 자동발행 시각(schedule_time).
 - llm — anthropic/gemini 모델, max_tokens.
 - keyword_research — 요청 딜레이·타임아웃, 구글/네이버 소스 on/off.
@@ -61,7 +70,27 @@ clone 후에는 `SETUP.md`의 순서대로 본인 환경·자격증명만 채우
 - coupang — 로켓 전용, 글당 상품 수, 검색 수·타임아웃, 스크래퍼 포트, 배너 숏코드.
 - 니치·카테고리·주제 씨앗 — `config/categories.yaml`.
 - .env — LLM_PROVIDER·키, 쿠팡 키/태그, WordPress 자격증명, `DASHBOARD_PORT`, 예산·편수.
+- 정책 작업실은 `.env`의 `DATA_GO_KR_API_KEY`와 이미지 생성용 `OPENAI_API_KEY`를 추가로 사용한다.
+
+## 국가정책·티스토리 작업실
+
+`./control.sh` 또는 `제어판.bat`에서 `17. 정책·티스토리 작업실`을 선택한다. 웹에서는 기존 대시보드의 **국가정책·티스토리 작업실 열기** 또는 `/policy`를 사용한다.
+
+터미널에서 직접 실행할 수도 있다.
+
+```bash
+python -m src.policy_cli collect
+python -m src.policy_cli list
+python -m src.policy_cli import-url "https://공식정책주소"
+python -m src.policy_cli generate 후보ID
+python -m src.policy_cli generate-recommended --count 1
+python -m src.policy_cli packages
+```
+
+`collect`는 보조금24 여러 페이지와 공식 지원조건을 검사해 농림·수산업, 기업·특수직역 전용 정책을 숨기고 30~50대 주부·직장인에게 맞는 생활 혜택만 자동 추천한다. `list`에는 추천 상위 후보만 표시되며, 전체 저장 상태가 필요할 때만 `list --all`을 사용한다. `generate-recommended`는 점수 상위 정책을 지정 편수만큼 자동 선택하지만 글과 OpenAI 이미지를 실제 생성하므로 API 비용을 확인한 뒤 실행한다.
+
+생성물은 `output/tistory/YYYY/MM/DD/정책ID_제목/`에 저장된다. `00_게시가이드.txt` 순서대로 제목과 세 구간의 HTML을 복사하고 대표·본문 이미지를 업로드한다. `05_출처_검증.md`의 경고를 확인한 후 먼저 비공개 저장으로 티스토리 스킨과 광고 표시를 점검한다. 이 작업실은 티스토리에 자동 로그인하거나 자동 게시하지 않는다.
 
 ## 다른 PC에서 이어받기
 
-다른 PC에서 clone 해 이어서 작업하는 전체 절차는 `CONTINUE-ON-NEW-PC.md` 참고. 요약하면 clone → `SETUP.md` 설치 → 개인 시크릿 2개(`.env`, `config/coupang_widget.html`)만 준비 → `제어판.bat` 실행. 일상 조작(발행·자동발행·설정·push·애드센스 페이지)은 모두 `제어판.bat` 메뉴에서 한다. 다른 PC에선 `git pull`로 받는다.
+다른 PC에서 clone 해 이어서 작업하는 전체 절차는 `CONTINUE-ON-NEW-PC.md` 참고. 요약하면 clone → `SETUP.md` 설치 → 개인 시크릿 2개(`.env`, `config/coupang_widget.html`) 준비 → Windows는 `제어판.bat`, macOS는 `./control.sh` 실행이다. 두 운영체제 모두 같은 콘솔 메뉴에서 발행·자동발행·설정·push·애드센스 페이지를 관리한다.

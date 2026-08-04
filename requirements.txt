@@ -6,6 +6,7 @@ beautifulsoup4>=4.12
 playwright>=1.44
 google-generativeai>=0.7
 anthropic>=0.34
+openai>=1.78
 markdown>=3.6
 APScheduler>=3.10
 pytest>=8.0

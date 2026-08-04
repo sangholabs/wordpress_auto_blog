@@ -34,9 +34,12 @@
 
 ## 4. 자동화
 - [x] run.bat + 작업 스케줄러 등록 안내 (SETUP 8단계) → verify(PC): 1일 1회 실행
+- [x] control.sh/run.sh + macOS launchd LaunchAgent 지원
+- [x] Windows/macOS 공통 schedule_task on/off/status API와 오프라인 테스트
 - [x] 실행 로그 logs/pipeline.log, 발행 기록 data/published.json
 
 ## 5. 검증·배포
 - [x] 단위 테스트 작성·통과 → verify: `pytest`
 - [x] 더미데이터/비밀정보 누출 점검 → verify: `git ls-files` 시크릿 없음 확인
 - [x] README/SETUP 최종 점검 후 GitHub 배포 완료
+- [x] Windows/macOS 설치·새 PC 이전 문서 분리 안내 완료

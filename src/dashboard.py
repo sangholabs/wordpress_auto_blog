@@ -10,14 +10,13 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
+from . import policy_web, schedule_task
 from .config import env, get_settings
 from .set_option import set_option as _set_yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 PY = sys.executable
 LOG = ROOT / "logs" / "pipeline.log"
-RUN_BAT = ROOT / "run.bat"
-TASK = "blog-auto"
 PORT = int(env("DASHBOARD_PORT", "5000"))  # .env 로 변경 가능
 
 
@@ -54,6 +53,7 @@ pre{background:#0e1116;color:#d6deeb;padding:14px;border-radius:8px;overflow:aut
 small{color:#777;}form{display:inline;}
 </style></head><body>
 <h1>블로그 자동화 대시보드</h1>
+<p><a href="/policy" style="display:inline-block;background:#2f9e6f;color:#fff;padding:10px 14px;border-radius:8px;text-decoration:none;font-weight:bold">국가정책·티스토리 작업실 열기</a></p>
 <div class="status">
 자동발행: <span class="cur">%%SCHED%%</span> (매일 %%TIME%%) &nbsp;·&nbsp;
 발행모드: <span class="cur">%%MODE%%</span> &nbsp;·&nbsp;
@@ -101,8 +101,7 @@ def _tail(n=50):
 
 
 def _sched_status():
-    r = subprocess.run(["schtasks", "/query", "/tn", TASK], capture_output=True, text=True)
-    return "켜짐" if r.returncode == 0 else "꺼짐"
+    return "켜짐" if schedule_task.status() else "꺼짐"
 
 
 def _mode():
@@ -143,6 +142,8 @@ def _rocket_btns():
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if policy_web.handle_get(self):
+            return
         repl = {
             "%%SCHED%%": _sched_status(), "%%TIME%%": _sched_time(), "%%MODE%%": _mode(),
             "%%PPD%%": str(_get("publish", "posts_per_day", 1)),
@@ -162,6 +163,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body.encode("utf-8"))
 
     def do_POST(self):
+        if policy_web.handle_post(self):
+            return
         if self.path == "/run":
             _bg([PY, "-m", "src.pipeline"])
         elif self.path == "/run-refresh":
@@ -173,10 +176,9 @@ class Handler(BaseHTTPRequestHandler):
             if key and val:
                 _set_yaml(key, val)
         elif self.path == "/sched-on":
-            subprocess.run(["schtasks", "/create", "/tn", TASK, "/tr", str(RUN_BAT),
-                            "/sc", "daily", "/st", _sched_time(), "/f"])
+            schedule_task.on()
         elif self.path == "/sched-off":
-            subprocess.run(["schtasks", "/delete", "/tn", TASK, "/f"])
+            schedule_task.off()
         self.send_response(303)
         self.send_header("Location", "/")
         self.end_headers()
