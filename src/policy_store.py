@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -69,8 +69,38 @@ def _init(conn: sqlite3.Connection) -> None:
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS automation_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trigger_type TEXT NOT NULL DEFAULT 'scheduled',
+            status TEXT NOT NULL DEFAULT 'running',
+            requested_count INTEGER NOT NULL DEFAULT 0,
+            generated_count INTEGER NOT NULL DEFAULT 0,
+            failed_count INTEGER NOT NULL DEFAULT 0,
+            started_at TEXT NOT NULL,
+            finished_at TEXT NOT NULL DEFAULT '',
+            errors_json TEXT NOT NULL DEFAULT '[]'
+        );
+        CREATE TABLE IF NOT EXISTS seo_audits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            package_id TEXT NOT NULL REFERENCES packages(id),
+            phase TEXT NOT NULL,
+            url TEXT NOT NULL DEFAULT '',
+            score INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL,
+            result_json TEXT NOT NULL,
+            checked_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_automation_runs_started
+            ON automation_runs(started_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_seo_audits_package
+            ON seo_audits(package_id, phase, checked_at DESC);
         """
     )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(packages)")}
+    if "generation_mode" not in columns:
+        conn.execute("ALTER TABLE packages ADD COLUMN generation_mode TEXT NOT NULL DEFAULT 'manual'")
+    if "automation_run_id" not in columns:
+        conn.execute("ALTER TABLE packages ADD COLUMN automation_run_id INTEGER")
     conn.commit()
 
 
@@ -179,19 +209,22 @@ def save_package(package: dict, path: Path | None = None) -> None:
             """
             INSERT INTO packages (
                 id, candidate_id, title, category, path, status, created_at,
-                updated_at, published_at, tistory_url, error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                updated_at, published_at, tistory_url, error, generation_mode,
+                automation_run_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 title=excluded.title, category=excluded.category, path=excluded.path,
                 status=excluded.status, updated_at=excluded.updated_at,
                 published_at=excluded.published_at, tistory_url=excluded.tistory_url,
-                error=excluded.error
+                error=excluded.error, generation_mode=excluded.generation_mode,
+                automation_run_id=excluded.automation_run_id
             """,
             (
                 package["id"], package["candidate_id"], package["title"], package["category"],
                 package["path"], package.get("status", "ready"), created, updated,
                 package.get("published_at", ""), package.get("tistory_url", ""),
                 package.get("error", ""),
+                package.get("generation_mode", "manual"), package.get("automation_run_id"),
             ),
         )
 
@@ -240,3 +273,136 @@ def get_regions(path: Path | None = None) -> list[str]:
     with _connect(path) as conn:
         row = conn.execute("SELECT value FROM workspace_settings WHERE key='regions'").fetchone()
     return json.loads(row["value"]) if row else []
+
+
+def set_workspace_setting(key: str, value: object, path: Path | None = None) -> None:
+    with _connect(path) as conn:
+        conn.execute(
+            "INSERT INTO workspace_settings(key, value) VALUES(?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, json.dumps(value, ensure_ascii=False)),
+        )
+
+
+def get_workspace_setting(key: str, default: object = None, path: Path | None = None) -> object:
+    with _connect(path) as conn:
+        row = conn.execute("SELECT value FROM workspace_settings WHERE key=?", (key,)).fetchone()
+    if not row:
+        return default
+    try:
+        return json.loads(row["value"])
+    except json.JSONDecodeError:
+        return row["value"]
+
+
+def _parse_iso(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def begin_automation_run(
+    requested_count: int, trigger_type: str = "scheduled", path: Path | None = None,
+    stale_hours: int = 6,
+) -> int | None:
+    """동시에 하나의 자동 실행만 허용하고 새 실행 ID를 반환한다."""
+    started = now_iso()
+    stale_before = datetime.now(timezone.utc) - timedelta(hours=stale_hours)
+    with _connect(path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        rows = conn.execute(
+            "SELECT id, started_at FROM automation_runs WHERE status='running' ORDER BY id DESC"
+        ).fetchall()
+        for row in rows:
+            timestamp = _parse_iso(row["started_at"])
+            if timestamp and timestamp.astimezone(timezone.utc) >= stale_before:
+                conn.rollback()
+                return None
+            conn.execute(
+                "UPDATE automation_runs SET status='failed', finished_at=?, "
+                "errors_json=? WHERE id=?",
+                (started, json.dumps(["이전 자동 실행 잠금이 만료되어 종료 처리됨"], ensure_ascii=False), row["id"]),
+            )
+        cursor = conn.execute(
+            "INSERT INTO automation_runs(trigger_type, status, requested_count, started_at) "
+            "VALUES(?, 'running', ?, ?)",
+            (trigger_type, requested_count, started),
+        )
+        conn.commit()
+        return int(cursor.lastrowid)
+
+
+def finish_automation_run(
+    run_id: int, *, generated_count: int, failed_count: int,
+    errors: list[str] | None = None, status: str = "completed", path: Path | None = None,
+) -> None:
+    with _connect(path) as conn:
+        conn.execute(
+            "UPDATE automation_runs SET status=?, generated_count=?, failed_count=?, "
+            "finished_at=?, errors_json=? WHERE id=?",
+            (status, generated_count, failed_count, now_iso(),
+             json.dumps(errors or [], ensure_ascii=False), run_id),
+        )
+
+
+def get_automation_run(run_id: int, path: Path | None = None) -> dict | None:
+    with _connect(path) as conn:
+        row = conn.execute("SELECT * FROM automation_runs WHERE id=?", (run_id,)).fetchone()
+    if not row:
+        return None
+    item = dict(row)
+    item["errors"] = json.loads(item.pop("errors_json") or "[]")
+    return item
+
+
+def list_automation_runs(limit: int = 20, path: Path | None = None) -> list[dict]:
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM automation_runs ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["errors"] = json.loads(item.pop("errors_json") or "[]")
+        result.append(item)
+    return result
+
+
+def auto_packages_on(date_value: str, path: Path | None = None) -> int:
+    with _connect(path) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS count FROM packages "
+            "WHERE generation_mode='auto' AND substr(created_at, 1, 10)=?",
+            (date_value,),
+        ).fetchone()
+    return int(row["count"])
+
+
+def save_seo_audit(
+    package_id: str, phase: str, result: dict, url: str = "", path: Path | None = None,
+) -> int:
+    with _connect(path) as conn:
+        cursor = conn.execute(
+            "INSERT INTO seo_audits(package_id, phase, url, score, status, result_json, checked_at) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?)",
+            (package_id, phase, url, int(result.get("score", 0)), result.get("status", "error"),
+             json.dumps(result, ensure_ascii=False), result.get("checked_at", now_iso())),
+        )
+        return int(cursor.lastrowid)
+
+
+def latest_seo_audit(
+    package_id: str, phase: str = "local", path: Path | None = None,
+) -> dict | None:
+    with _connect(path) as conn:
+        row = conn.execute(
+            "SELECT * FROM seo_audits WHERE package_id=? AND phase=? "
+            "ORDER BY id DESC LIMIT 1", (package_id, phase),
+        ).fetchone()
+    if not row:
+        return None
+    item = dict(row)
+    item["result"] = json.loads(item.pop("result_json"))
+    return item

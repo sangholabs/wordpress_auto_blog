@@ -11,7 +11,10 @@ import sys
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from . import policy_package, policy_service, policy_store
+from . import (
+    affiliate, policy_package, policy_pages, policy_schedule_task, policy_seo,
+    policy_service, policy_settings, policy_store,
+)
 from .config import ROOT
 from .policy_sources import POLICY_CATEGORIES
 
@@ -95,12 +98,31 @@ def _package_rows(items: list[dict]) -> str:
 
 
 def index_page(message: str = "") -> str:
+    policy_service.prune_expired_candidates()
     candidates = policy_store.list_candidates(status="ready", limit=50)
     packages = policy_store.list_packages(limit=100)
     regions = ", ".join(policy_store.get_regions())
+    settings = policy_settings.get()
+    schedule_status = "켜짐" if policy_schedule_task.status() else "꺼짐"
+    last_collect = str(policy_store.get_workspace_setting("last_full_collection_at", "없음"))[:16]
     message_html = f'<div class="panel warn">{html.escape(message)}</div>' if message else ""
     category_options = "".join(f'<option value="{html.escape(cat)}">{html.escape(cat)}</option>' for cat in POLICY_CATEGORIES)
     body = f"""{message_html}
+<section class="panel"><h2>티스토리 자동 생성·수익 설정</h2>
+<p><strong>자동생성 {schedule_status}</strong> · 매일 {html.escape(str(settings['schedule_time']))} · 하루 {settings['packages_per_day']}편 · 마지막 후보 수집 {html.escape(last_collect)}</p>
+<div class="row"><form method="post" action="/policy/auto-run"><button class="green">오늘 자동 생성 실행</button></form>
+<form method="post" action="/policy/schedule"><button name="action" value="on">자동생성 켜기</button><button class="red" name="action" value="off">끄기</button></form></div>
+<form method="post" action="/policy/settings"><div class="row">
+<label>시각 <input name="schedule_time" value="{html.escape(str(settings['schedule_time']))}" size="6"></label>
+<label>하루 편수 <input name="packages_per_day" type="number" min="1" max="5" value="{settings['packages_per_day']}" style="width:65px"></label>
+<label>광고 <select name="coupang_enabled"><option value="true" {'selected' if settings['coupang_enabled'] else ''}>켜짐</option><option value="false" {'selected' if not settings['coupang_enabled'] else ''}>꺼짐</option></select></label>
+<label>레이아웃 <select name="coupang_layout">{''.join(f'<option value="{value}" {"selected" if settings["coupang_layout"] == value else ""}>{value}</option>' for value in ("per_h2","grouped","grouped_h2"))}</select></label>
+<label>개수 <input name="coupang_max_blocks" type="number" min="1" max="3" value="{settings['coupang_max_blocks']}" style="width:60px"></label>
+<label>로켓 <select name="rocket_only"><option value="true" {'selected' if settings['rocket_only'] else ''}>전용</option><option value="false" {'selected' if not settings['rocket_only'] else ''}>전체</option></select></label>
+<label>이미지 <select name="images_enabled"><option value="true" {'selected' if settings['images_enabled'] else ''}>대표+본문 생성</option><option value="false" {'selected' if not settings['images_enabled'] else ''}>생성 안 함</option></select></label>
+<button>티스토리 설정 저장</button></div></form>
+<div class="row"><form method="post" action="/policy/pages"><button class="gray">애드센스 필수 페이지 패키지 만들기</button></form><a class="btn orange" href="https://partners.coupang.com/" target="_blank" rel="noopener">쿠팡 배너 만들기</a></div>
+<p class="muted">WordPress 설정과 독립적으로 저장됩니다. API 키·Claude 인증·쿠팡 배너 파일만 공유합니다. 쿠팡 연결 방식: {html.escape(affiliate.monetization_mode())}</p></section>
 <div class="grid"><section class="panel"><h2>정책 수집</h2>
 <form method="post" action="/policy/collect"><button class="green">보조금24 후보 수집</button></form>
 <p class="muted">DATA_GO_KR_API_KEY가 필요합니다. 전국 정책과 아래 선택 지역만 수집합니다.</p>
@@ -116,6 +138,11 @@ def index_page(message: str = "") -> str:
 <hr style="border:0;border-top:1px solid #e8ecf2;margin:16px 0"><form method="post" action="/policy/generate">
 <div class="row"><label>이미지 엔진 <select name="provider"><option value="openai">OpenAI GPT Image</option><option value="pollinations">Pollinations</option></select></label>
 <label>카테고리 참고 <select disabled><option>전체</option>{category_options}</select></label><button class="orange">선택 후보 글·이미지 생성</button></div>
+<details><summary>쿠팡 파트너스 광고 소재 입력(선택)</summary>
+<p class="muted">각 칸에 상품 URL, 링크+이미지 HTML, iframe 또는 PartnersCoupang script 중 하나를 붙여넣으세요. 여러 후보를 선택하면 같은 소재가 모두 적용됩니다.</p>
+<textarea name="coupang_asset_1" placeholder="첫 번째 쿠팡 소재"></textarea>
+<textarea name="coupang_asset_2" placeholder="두 번째 쿠팡 소재"></textarea>
+<textarea name="coupang_asset_3" placeholder="세 번째 쿠팡 소재"></textarea></details>
 <div style="overflow-x:auto"><table><thead><tr><th></th><th>정책</th><th>분류</th><th>점수</th><th>상태</th><th>확인</th></tr></thead><tbody>{_candidate_rows(candidates)}</tbody></table></div></form></section>
 
 <section class="panel"><h2>티스토리 패키지</h2><div style="overflow-x:auto"><table><thead><tr><th>제목</th><th>카테고리</th><th>상태</th><th>생성일</th></tr></thead><tbody>{_package_rows(packages)}</tbody></table></div></section>
@@ -130,12 +157,13 @@ def package_page(package_id: str) -> str:
     folder = Path(package["path"])
     manifest = policy_package.load_manifest(folder)
     fields = {
-        "copy-title": ("제목", (folder / "01_제목.txt").read_text(encoding="utf-8")),
-        "copy-html": ("전체 HTML", (folder / "02_본문_티스토리.html").read_text(encoding="utf-8")),
-        "copy-seg1": ("본문 시작", (folder / "segments/01_본문_시작.html").read_text(encoding="utf-8")),
-        "copy-seg2": ("본문 중간", (folder / "segments/02_본문_중간.html").read_text(encoding="utf-8")),
-        "copy-seg3": ("본문 마무리", (folder / "segments/03_본문_마무리.html").read_text(encoding="utf-8")),
-        "copy-tags": ("태그", (folder / "04_태그.txt").read_text(encoding="utf-8")),
+        "copy-title": ("제목", (folder / "01_제목.txt").read_text(encoding="utf-8-sig")),
+        "copy-meta": ("메타설명", manifest.get("meta_description", "")),
+        "copy-html": ("전체 HTML", (folder / "02_본문_티스토리.html").read_text(encoding="utf-8-sig")),
+        "copy-seg1": ("본문 시작", (folder / "segments/01_본문_시작.html").read_text(encoding="utf-8-sig")),
+        "copy-seg2": ("본문 중간", (folder / "segments/02_본문_중간.html").read_text(encoding="utf-8-sig")),
+        "copy-seg3": ("본문 마무리", (folder / "segments/03_본문_마무리.html").read_text(encoding="utf-8-sig")),
+        "copy-tags": ("태그", (folder / "04_태그.txt").read_text(encoding="utf-8-sig")),
     }
     copy_buttons = "".join(
         f'<textarea class="copybox" id="{key}">{html.escape(value)}</textarea><button onclick="copyFrom(\'{key}\')">{label} 복사</button>'
@@ -159,9 +187,27 @@ def package_page(package_id: str) -> str:
             '<button class="orange">이 이미지만 재생성</button></form></div>'
         )
     warnings = "".join(f'<div class="warn">{html.escape(w)}</div>' for w in manifest.get("verification_warnings", [])) or '<p>자동 검증 경고 없음</p>'
+    seo = manifest.get("seo", {})
+    saved_assets = manifest.get("coupang_assets") or manifest.get("coupang_product_links", [])
+    asset_sources = [
+        item.get("source_code") or item.get("url", "") if isinstance(item, dict) else str(item)
+        for item in saved_assets
+    ]
+    asset_sources.extend([""] * (3 - len(asset_sources)))
+    asset_fields = "".join(
+        f'<label>소재 {index}<textarea name="coupang_asset_{index}" placeholder="상품 URL / HTML / iframe / script">{html.escape(asset_sources[index - 1])}</textarea></label>'
+        for index in range(1, 4)
+    )
+    asset_summary = " · ".join(
+        affiliate.coupang_asset_label(item) for item in saved_assets if isinstance(item, dict) and item.get("type")
+    ) or "직접 입력 소재 없음"
+    seo_issues = "".join(f'<div class="warn">{html.escape(issue)}</div>' for issue in seo.get("issues", [])) or '<p>SEO 자동 점검 이슈 없음</p>'
     body = f"""<section class="panel"><h2>{html.escape(manifest['title'])}</h2><p><span class="badge">{html.escape(manifest['status'])}</span> · {html.escape(manifest['category'])}</p>
 <div class="row">{copy_buttons}<a class="btn green" href="/policy/open?id={package_id}&preview=1">미리보기 열기</a><a class="btn gray" href="/policy/open?id={package_id}">폴더 열기</a><a class="btn orange" href="/policy/zip?id={package_id}">ZIP 다운로드</a></div></section>
 <section class="grid">{''.join(images)}</section><section class="panel"><h2>검증 경고</h2>{warnings}</section>
+<section class="panel"><h2>SEO 점검</h2><p><strong>{seo.get('score', 0)}점 · {html.escape(seo.get('status', 'review'))}</strong><br><strong>핵심 키워드:</strong> {html.escape(seo.get('primary_keyword', ''))}<br><strong>메타 설명:</strong> {html.escape(seo.get('meta_description', manifest.get('meta_description', '')))}</p>{seo_issues}<form method="post" action="/policy/seo"><input type="hidden" name="package_id" value="{package_id}"><button>게시 전 SEO 다시 검사</button></form><p class="muted">상세 내용은 07_SEO_게시정보.txt와 seo/ 폴더에 저장됩니다.</p></section>
+<section class="panel"><h2>쿠팡 파트너스 광고 소재</h2><p>{html.escape(asset_summary)}</p><form method="post" action="/policy/coupang-assets"><input type="hidden" name="package_id" value="{package_id}">{asset_fields}<button class="orange">광고 소재 저장·본문 재빌드</button></form><p class="muted">직접 입력한 소재가 API·공용 배너·검색 링크보다 우선합니다. 모두 지우고 저장하면 기본 연결 방식으로 돌아갑니다. iframe/script는 티스토리가 제거할 수 있으므로 비공개 미리보기에서 확인하세요.</p></section>
+<section class="panel"><h2>실패 이미지 재시도</h2><form method="post" action="/policy/retry-images"><input type="hidden" name="package_id" value="{package_id}"><select name="provider"><option value="openai">OpenAI</option><option value="pollinations">Pollinations</option></select> <button class="orange">없는 이미지 모두 재시도</button></form></section>
 <section class="panel"><h2>티스토리 게시 완료 기록</h2><form method="post" action="/policy/published"><input type="hidden" name="package_id" value="{package_id}"><div class="row"><input name="url" type="url" style="flex:1" placeholder="https://내블로그.tistory.com/..." value="{html.escape(manifest.get('tistory_url',''))}"><button class="green">게시 완료 표시</button></div></form></section>"""
     return _layout("티스토리 패키지", body)
 
@@ -229,14 +275,38 @@ def handle_post(handler) -> bool:
     try:
         if parsed.path == "/policy/collect":
             _bg([sys.executable, "-m", "src.policy_cli", "collect"])
+        elif parsed.path == "/policy/auto-run":
+            _bg([sys.executable, "-m", "src.policy_cli", "auto-run"])
+        elif parsed.path == "/policy/schedule":
+            action = data.get("action", [""])[0]
+            policy_schedule_task.on() if action == "on" else policy_schedule_task.off()
+        elif parsed.path == "/policy/settings":
+            for key in (
+                "schedule_time", "packages_per_day", "coupang_enabled",
+                "coupang_layout", "coupang_max_blocks", "rocket_only", "images_enabled",
+            ):
+                if key in data:
+                    policy_settings.set_value(key, data[key][0])
+            if policy_schedule_task.status():
+                policy_schedule_task.on()
         elif parsed.path == "/policy/import":
             policy_service.import_url(data.get("url", [""])[0], data.get("text", [""])[0])
+        elif parsed.path == "/policy/pages":
+            policy_pages.create_required_pages_package()
         elif parsed.path == "/policy/generate":
             ids = data.get("candidate_id", [])
             if not ids:
                 raise ValueError("생성할 정책 후보를 선택하세요.")
             provider = data.get("provider", ["openai"])[0]
-            _bg([sys.executable, "-m", "src.policy_cli", "generate", *ids, "--provider", provider])
+            assets = [
+                data.get(f"coupang_asset_{index}", [""])[0].strip()
+                for index in range(1, 4)
+            ]
+            asset_args = [arg for source in assets if source for arg in ("--coupang-asset", source)]
+            _bg([
+                sys.executable, "-m", "src.policy_cli", "generate", *ids,
+                "--provider", provider, *asset_args,
+            ])
         elif parsed.path == "/policy/generate-recommended":
             count = max(1, min(int(data.get("count", ["1"])[0]), 10))
             provider = data.get("provider", ["openai"])[0]
@@ -250,6 +320,32 @@ def handle_post(handler) -> bool:
                 sys.executable, "-m", "src.policy_cli", "regenerate-image", package_id,
                 data.get("slot", [""])[0], "--provider", data.get("provider", ["openai"])[0],
             ])
+            _redirect(handler, f"/policy/package?id={package_id}")
+            return True
+        elif parsed.path == "/policy/retry-images":
+            package_id = data.get("package_id", [""])[0]
+            _bg([
+                sys.executable, "-m", "src.policy_cli", "retry-images", package_id,
+                "all", "--provider", data.get("provider", ["openai"])[0],
+            ])
+            _redirect(handler, f"/policy/package?id={package_id}")
+            return True
+        elif parsed.path == "/policy/seo":
+            package_id = data.get("package_id", [""])[0]
+            policy_seo.run_local_for_package(package_id)
+            _redirect(handler, f"/policy/package?id={package_id}")
+            return True
+        elif parsed.path in {"/policy/coupang-assets", "/policy/coupang-links"}:
+            package_id = data.get("package_id", [""])[0]
+            if parsed.path.endswith("coupang-links"):
+                assets = data.get("product_urls", [""])[0].split()
+            else:
+                assets = [
+                    data.get(f"coupang_asset_{index}", [""])[0].strip()
+                    for index in range(1, 4)
+                    if data.get(f"coupang_asset_{index}", [""])[0].strip()
+                ]
+            policy_package.set_coupang_assets(package_id, assets)
             _redirect(handler, f"/policy/package?id={package_id}")
             return True
         elif parsed.path == "/policy/published":

@@ -121,3 +121,13 @@ def test_stale_and_expired_candidate_is_rejected():
     errors = policy_sources.validate_for_generation(candidate)
     assert any("9일" in error for error in errors)
     assert any("종료" in error for error in errors)
+
+
+def test_normalize_gov24_marks_finished_policy_expired():
+    item = policy_sources.normalize_gov24({
+        "서비스ID": "OLD1", "서비스명": "직장인 난방비 지원",
+        "소관기관명": "산업통상자원부", "지원대상": "근로자 가구",
+        "지원내용": "난방비 지원", "신청기간": "2023-10-01 ~ 2023-11-23",
+    }, minimum_score=0)
+    assert item["status"] == "expired"
+    assert "2023-11-23" in item["last_error"]

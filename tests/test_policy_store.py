@@ -33,8 +33,31 @@ def test_package_status_roundtrip(tmp_path):
         "id": "post1", "candidate_id": "abc123", "title": "제목",
         "category": "생활비·세금·환급", "path": str(tmp_path / "post1"),
         "status": "ready", "created_at": policy_store.now_iso(),
+        "generation_mode": "auto", "automation_run_id": 3,
     }, db)
-    assert policy_store.get_package("post1", db)["status"] == "ready"
+    stored = policy_store.get_package("post1", db)
+    assert stored["status"] == "ready"
+    assert stored["generation_mode"] == "auto"
     marked = policy_store.mark_published("post1", "https://example.tistory.com/1", db)
     assert marked["status"] == "published"
     assert marked["tistory_url"].endswith("/1")
+
+
+def test_automation_lock_and_seo_audit_roundtrip(tmp_path):
+    db = tmp_path / "workspace.sqlite3"
+    policy_store.upsert_candidate(_candidate(), db)
+    policy_store.save_package({
+        "id": "post1", "candidate_id": "abc123", "title": "제목",
+        "category": "생활비·세금·환급", "path": str(tmp_path / "post1"),
+        "status": "ready", "created_at": policy_store.now_iso(),
+    }, db)
+    run_id = policy_store.begin_automation_run(1, path=db)
+    assert run_id
+    assert policy_store.begin_automation_run(1, path=db) is None
+    policy_store.finish_automation_run(
+        run_id, generated_count=1, failed_count=0, status="completed", path=db
+    )
+    assert policy_store.get_automation_run(run_id, db)["generated_count"] == 1
+    audit = {"score": 92, "status": "pass", "checked_at": policy_store.now_iso(), "issues": []}
+    policy_store.save_seo_audit("post1", "local", audit, path=db)
+    assert policy_store.latest_seo_audit("post1", path=db)["result"]["score"] == 92

@@ -57,6 +57,10 @@ coupang:
 # 국가정책 수집 → 검토 → 티스토리 수동 게시 패키지 생성 전용 설정.
 # 기존 WordPress 자동발행 설정과 서로 독립적으로 동작한다.
 policy_workspace:
+  auto_generate: false    # 티스토리 패키지 자동 생성(자동 게시 아님)
+  schedule_time: "09:30" # WordPress 자동발행과 독립된 실행 시각
+  packages_per_day: 5     # 매일 자동으로 만들 티스토리 패키지 수
+  candidate_refresh_hours: 24 # 후보 풀이 이 시간보다 오래되면 전체 재수집
   scan_page_size: 500      # 보조금24 페이지당 조회 수
   scan_limit: 5000         # 첫 페이지만 보지 않고 이 범위까지 고르게 검사
   use_support_conditions: true  # 근로자·가구·연령·전문업종 공식 조건을 선별에 사용
@@ -67,8 +71,18 @@ policy_workspace:
   image_provider: openai   # openai 기본, Pollinations는 글/이미지별 수동 선택
   image_model: "gpt-image-2"
   image_quality: medium
+  images_enabled: true     # 티스토리 대표 1장·본문 2장 생성. WordPress 대표이미지 설정과 독립
+  coupang_enabled: true
   coupang_layout: per_h2
   coupang_max_blocks: 2
+  rocket_only: true
+  seo_title_min: 28
+  seo_title_max: 45
+  seo_description_min: 80
+  seo_description_max: 155
+  seo_min_body_chars: 1800
+  seo_pass_score: 80
+  seo_review_score: 60
 
 guardrails:
   monthly_llm_budget_usd: 10

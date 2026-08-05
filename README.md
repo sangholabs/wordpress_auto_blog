@@ -61,7 +61,7 @@ clone 후에는 `SETUP.md`의 순서대로 본인 환경·자격증명만 채우
 코드 수정 없이 `config/settings.yaml`(동작·디자인)과 `.env`(키·포트)에서 조정한다. 각 항목엔 주석이 달려 있다.
 
 - content — 최소 분량, 목차, 쿠팡 고지문구, 배너 레이아웃(per_h2/grouped/grouped_h2)·개수.
-- policy_workspace — 보조금24 수집 수, 7일 출처 캐시, GPT Image 모델·품질, 정책 글 쿠팡 배너 수.
+- policy_workspace — 티스토리 전용 자동생성 시각·하루 편수, 보조금24 후보 갱신, SEO 기준, GPT Image, 쿠팡 광고·배너·로켓 설정. WordPress 설정과 독립된다.
 - publish — 발행 모드(publish/draft), 하루 편수, 자동발행 시각(schedule_time).
 - llm — anthropic/gemini 모델, max_tokens.
 - keyword_research — 요청 딜레이·타임아웃, 구글/네이버 소스 on/off.
@@ -84,12 +84,30 @@ python -m src.policy_cli list
 python -m src.policy_cli import-url "https://공식정책주소"
 python -m src.policy_cli generate 후보ID
 python -m src.policy_cli generate-recommended --count 1
+python -m src.policy_cli auto-run
+python -m src.policy_schedule_task on
+python -m src.policy_schedule_task status
+python -m src.policy_cli seo-check 글ID
+python -m src.policy_cli retry-images 글ID all --provider openai
+python -m src.policy_cli settings show
+python -m src.policy_cli dashboard
+python -m src.policy_cli claude-login
+python -m src.policy_cli banner-setup
+python -m src.policy_cli required-pages
 python -m src.policy_cli packages
+# 기존 글에 쿠팡 상품 URL 적용
+python -m src.policy_cli coupang-assets 글ID --url "https://link.coupang.com/a/..."
+# HTML/iframe/script 소재는 UTF-8 파일로 저장한 뒤 적용
+python -m src.policy_cli coupang-assets 글ID --file coupang_banner.html
 ```
 
-`collect`는 보조금24 여러 페이지와 공식 지원조건을 검사해 농림·수산업, 기업·특수직역 전용 정책을 숨기고 30~50대 주부·직장인에게 맞는 생활 혜택만 자동 추천한다. `list`에는 추천 상위 후보만 표시되며, 전체 저장 상태가 필요할 때만 `list --all`을 사용한다. `generate-recommended`는 점수 상위 정책을 지정 편수만큼 자동 선택하지만 글과 OpenAI 이미지를 실제 생성하므로 API 비용을 확인한 뒤 실행한다.
+`collect`는 보조금24 여러 페이지와 공식 지원조건을 검사해 농림·수산업, 기업·특수직역 전용 정책을 숨기고 30~50대 주부·직장인에게 맞는 생활 혜택만 자동 추천한다. `list`에는 추천 상위 후보만 표시되며, 전체 저장 상태가 필요할 때만 `list --all`을 사용한다. `generate-recommended`는 수동 일괄 생성이고, `auto-run`은 하루 한도와 중복 실행을 확인한 뒤 점수·카테고리 분산 순서로 생성한다. 후보가 부족하거나 마지막 전체 수집 후 24시간이 지나면 다시 수집하며 선택 정책은 생성 직전 재검증한다.
 
-생성물은 `output/tistory/YYYY/MM/DD/정책ID_제목/`에 저장된다. `00_게시가이드.txt` 순서대로 제목과 세 구간의 HTML을 복사하고 대표·본문 이미지를 업로드한다. `05_출처_검증.md`의 경고를 확인한 후 먼저 비공개 저장으로 티스토리 스킨과 광고 표시를 점검한다. 이 작업실은 티스토리에 자동 로그인하거나 자동 게시하지 않는다.
+생성물은 `output/tistory/YYYY/MM/DD/정책ID_제목/`에 저장된다. `00_게시가이드.txt` 순서대로 제목과 세 구간의 HTML을 복사하고 대표·본문 이미지를 업로드한다. 한 번에 넣을 때는 `02_본문_HTML블록용.txt`, 이미지 사이로 나눠 넣을 때는 `segments/*_HTML블록용.txt`를 티스토리의 **HTML 블록** 또는 HTML 모드에 붙여넣는다. **코드블록은 HTML 소스를 화면에 그대로 표시하므로 본문 입력에 사용하지 않는다.** 사람이 여는 HTML·텍스트 산출물은 macOS 텍스트 편집기의 잘못된 한글 인코딩 추정을 막도록 UTF-8 BOM으로 저장된다.
+
+`05_출처_검증.md`, `07_SEO_게시정보.txt`, `seo/게시전_검사.json`을 확인한 후 먼저 비공개 저장으로 티스토리 스킨과 광고 표시를 점검한다. OpenAI 이미지 일부가 실패하면 `needs_image_retry`로 보관하며 누락된 이미지만 재시도할 수 있다. 게시 URL을 기록하면 `seo/게시후_검사.json`도 생성한다. 이 작업실은 티스토리에 자동 로그인하거나 자동 게시하지 않는다. 애드센스용 소개·개인정보처리방침·문의 페이지는 `output/tistory/pages/`에 별도 수동 게시 패키지로 만든다.
+
+티스토리 글별 쿠팡 소재는 상품 URL, 쿠팡이 발급한 링크+이미지 HTML, iframe, `PartnersCoupang.G` 스크립트를 지원한다. 터미널에서는 소재 코드를 클립보드에 복사한 뒤 수동 글 생성 또는 `20. ...광고 소재 설정`에서 **클립보드 코드**를 선택한다. 웹 작업실은 소재 3개를 각각 별도 칸에 붙여넣는다. 크기는 manifest에 기록되고 모바일 폭을 넘지 않도록 감싸지만, 티스토리가 iframe/script를 제거할 수 있으므로 비공개 게시 후 반드시 확인한다.
 
 ## 다른 PC에서 이어받기
 

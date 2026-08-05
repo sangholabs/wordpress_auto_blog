@@ -148,7 +148,7 @@ def to_html(post: dict, for_wordpress: bool = False) -> str:
         html, flags=re.DOTALL,
     )
     layout = s.get("banner_layout", "per_h2")
-    products = affiliate.products_for(post["keyword"])
+    products = affiliate.products_for(post["keyword"], options=get_settings().get("coupang", {}))
     if products and layout == "per_h2":
         # 소제목마다 서로 다른 상품 카드 1개씩 + '추천 상품' 자리(토큰)엔 전체 그리드
         cards = [_cards_html([p]) for p in products]

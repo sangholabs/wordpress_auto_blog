@@ -11,12 +11,12 @@ from .set_option import set_option
 
 MENU = """
 ==================== 블로그 자동화 제어판 ====================
- [발행]
+ [WordPress 발행]
   1. 지금 1편 발행
   2. 키워드 새로 수집 후 발행
- [자동발행]
+ [WordPress 자동발행]
   3. 자동발행 켜기      4. 자동발행 끄기      5. 시각 변경
- [설정]
+ [WordPress 설정]
   6. 발행모드 (공개/초안)    7. 하루 편수
   8. 배너 레이아웃           9. 배너 개수        10. 로켓 전용
  [기타]
@@ -44,7 +44,7 @@ def _status():
     else:
         coupang = "검색링크(수익 없음)"
     on = lambda b: "켜짐" if b else "꺼짐"
-    print("── 현재 설정 ──────────────────────────────")
+    print("── WordPress 현재 설정 ─────────────────────")
     print(f" 발행모드:{p.get('status')} | 하루:{p.get('posts_per_day')}편 | 자동발행:매일 {p.get('schedule_time')}")
     print(f" 배너:{c.get('banner_layout')}/{c.get('max_banners')}개 | 로켓전용:{on(cp.get('rocket_only'))} | 대표이미지:{on(c.get('featured_image', True))}")
     print(f" 중복제거:{on(s.get('topic_queue', {}).get('one_per_product', True))} | 글엔진:{env('LLM_PROVIDER', 'claude_code')} | 쿠팡수익:{coupang}")

@@ -299,6 +299,9 @@ def normalize_gov24(
     facts["_curation"] = curation
     if conditions:
         facts["_support_conditions"] = conditions
+    expiry_error = expired_application_error({"facts": facts})
+    expired = bool(expiry_error)
+    status = "expired" if expired else "ready" if curation["recommended"] else "filtered_out"
     return {
         "id": stable_id("gov24", external_id or source_url + title),
         "source_type": "gov24",
@@ -313,7 +316,8 @@ def normalize_gov24(
         "source_updated_at": _value(data, "수정일시", "수정일", "updatedAt"),
         "checked_at": policy_store.now_iso(),
         "score": curation["score"],
-        "status": "ready" if curation["recommended"] else "filtered_out",
+        "status": status,
+        "last_error": expiry_error,
     }
 
 
@@ -530,6 +534,12 @@ def _parse_expiry(text: str) -> date | None:
     return max(dates) if dates else None
 
 
+def expired_application_error(candidate: dict) -> str:
+    facts = candidate.get("facts", {})
+    expiry = _parse_expiry(str(facts.get("application_period", "")))
+    return f"신청기간이 {expiry.isoformat()}에 종료되었습니다." if expiry and expiry < date.today() else ""
+
+
 def validate_for_generation(candidate: dict, max_cache_days: int | None = None) -> list[str]:
     if max_cache_days is None:
         max_cache_days = int(get_settings().get("policy_workspace", {}).get("source_cache_days", 7))
@@ -541,9 +551,9 @@ def validate_for_generation(candidate: dict, max_cache_days: int | None = None) 
     if age.days > max_cache_days:
         errors.append(f"출처 확인 후 {age.days}일이 지나 다시 확인해야 합니다.")
     facts = candidate.get("facts", {})
-    expiry = _parse_expiry(str(facts.get("application_period", "")))
-    if expiry and expiry < date.today():
-        errors.append(f"신청기간이 {expiry.isoformat()}에 종료되었습니다.")
+    expiry_error = expired_application_error(candidate)
+    if expiry_error:
+        errors.append(expiry_error)
     if not (facts.get("summary") or facts.get("source_text")):
         errors.append("정책 설명을 읽지 못했습니다.")
     return errors

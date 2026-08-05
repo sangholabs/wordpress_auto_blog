@@ -124,11 +124,35 @@ python -m src.policy_cli collect
 python -m src.policy_cli list
 python -m src.policy_cli generate 후보ID
 python -m src.policy_cli generate-recommended --count 1
+python -m src.policy_cli auto-run
+python -m src.policy_cli settings show
+python -m src.policy_cli dashboard
+python -m src.policy_cli required-pages
 ```
 
 후보 수집은 보조금24 첫 페이지를 그대로 보여주지 않는다. 여러 페이지와 근로자·가구·연령·업종 지원조건을 함께 검사하고, 30~50대 주부·직장인 생활과 무관한 전문업종 정책은 자동으로 숨긴다. `list`는 추천 후보만 보여주며 `generate-recommended`를 실행하면 상위 후보를 자동 선택해 생성한다. 이 생성 명령부터 LLM과 이미지 API가 호출될 수 있다.
 
-정책 글은 자동 게시되지 않는다. `output/tistory/YYYY/MM/DD/` 아래의 `00_게시가이드.txt`를 따라 티스토리 HTML 모드에 붙여넣고 이미지를 직접 업로드한다. OpenAI 이미지 생성이 실패해도 글 패키지는 `ready_with_warnings` 상태로 남으며, 작업실에서 이미지만 다시 생성할 수 있다.
+정책 글은 자동 게시되지 않는다. `output/tistory/YYYY/MM/DD/` 아래의 `00_게시가이드.txt`를 따른다. 티스토리 기본모드의 **HTML 블록**에 `02_본문_HTML블록용.txt` 전체를 붙여넣거나, 본문 이미지를 사이에 넣으려면 `segments/*_HTML블록용.txt` 세 파일을 순서대로 붙여넣는다. 코드블록은 HTML을 렌더링하지 않고 소스로 표시하므로 사용하지 않는다. `.html`과 복사용 `.txt`는 모두 UTF-8 BOM으로 저장되어 macOS 텍스트 편집기에서도 한글을 올바르게 인식한다.
+
+글별 쿠팡 광고는 상품 URL뿐 아니라 쿠팡 파트너스가 발급한 링크+이미지 HTML, iframe, 카테고리/다이나믹 배너 `PartnersCoupang.G` 스크립트를 받을 수 있다. 터미널에서는 코드를 클립보드에 복사하고 **클립보드 코드** 입력을 선택한다. 파일로 적용하려면 `python -m src.policy_cli coupang-assets 글ID --file 배너코드.html`을 사용한다. iframe/script는 티스토리에서 제거될 수 있으므로 비공개 게시 후 확인한다.
+
+OpenAI 이미지 생성이 일부 실패하면 글 패키지는 `needs_image_retry` 상태로 남는다. 다음 명령 또는 작업실 메뉴에서 누락 이미지만 재시도할 수 있으며 Pollinations 전환은 사용자가 직접 선택한 경우에만 실행된다.
+
+```sh
+python -m src.policy_cli retry-images 글ID all --provider openai
+python -m src.policy_cli seo-check 글ID
+python -m src.policy_cli seo-check 글ID --url https://내블로그.tistory.com/글주소
+```
+
+티스토리 패키지 자동생성은 WordPress 자동발행과 별도다. 초기값은 꺼짐, 매일 09:30, 하루 1편이며 글 패키지만 만들고 게시하지 않는다.
+
+```sh
+python -m src.policy_schedule_task on
+python -m src.policy_schedule_task status
+python -m src.policy_schedule_task off
+```
+
+macOS plist는 `~/Library/LaunchAgents/com.wordpress-auto-blog.policy-tistory.plist`, 로그는 `logs/policy_pipeline.log`를 사용한다. Windows 작업 이름은 `blog-policy-tistory-auto`다. `src.schedule_task`는 WordPress 전용, `src.policy_schedule_task`는 티스토리 전용이므로 서로 등록·해제되지 않는다.
 
 ## 5. 쿠팡 파트너스 설정
 
@@ -196,6 +220,8 @@ Application Passwords 섹션이 보이지 않으면 HTTPS 적용 여부와 보�
 
 `.env`의 `SITE_NAME`, `SITE_OWNER`, `SITE_EMAIL`을 채운 뒤 제어판 13번을 실행한다. 생성 후 WordPress 관리자에서 소개·개인정보처리방침·문의 페이지를 메뉴에 추가한다.
 
+티스토리는 17번 작업실의 `티스토리 애드센스 필수 페이지 패키지`를 실행한다. `output/tistory/pages/`에 복사용 HTML 블록 파일을 만들며 WordPress에는 게시하지 않는다. 티스토리의 이름·운영자·문의 이메일이 다르면 `.env`의 `TISTORY_SITE_NAME`, `TISTORY_SITE_OWNER`, `TISTORY_SITE_EMAIL`을 별도로 채운다.
+
 ## 8. 실행과 자동발행
 
 ### 터미널 제어판
@@ -210,7 +236,7 @@ Application Passwords 섹션이 보이지 않으면 HTTPS 적용 여부와 보�
 ./control.sh
 ```
 
-주요 메뉴는 수동 발행, 키워드 갱신, 자동발행 등록·해제, 설정 변경, 대시보드, Claude 로그인이다.
+메인 메뉴 1~16은 WordPress 전용이다. 17번으로 들어간 뒤에는 티스토리 정책 패키지의 수집·자동생성·SEO·쿠팡·이미지·대시보드·Claude 로그인·필수 페이지 기능만 표시된다.
 
 ```text
 1 지금 발행  2 키워드 갱신 후 발행
@@ -219,6 +245,7 @@ Application Passwords 섹션이 보이지 않으면 HTTPS 적용 여부와 보�
 10 로켓 전용  11 대시보드  12 GitHub push
 13 애드센스 필수 페이지  14 Claude 로그인
 15 쿠팡 배너 도우미  16 대표 이미지 켜기/끄기
+17 정책·티스토리 작업실
 ```
 
 직접 실행:

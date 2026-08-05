@@ -1,4 +1,5 @@
 # 로컬 웹 대시보드 — 브라우저 버튼으로 발행·자동발행을 제어한다 (외부 의존성 없음, stdlib)
+import argparse
 import html as htmlmod
 import os
 import socket
@@ -39,7 +40,7 @@ def _btn(key, val, label, cls="b1"):
 
 
 PAGE = """<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<meta http-equiv="refresh" content="8"><title>블로그 자동화 대시보드</title>
+<meta http-equiv="refresh" content="8"><title>WordPress 자동화 대시보드</title>
 <style>
 body{font-family:-apple-system,'Malgun Gothic',sans-serif;max-width:820px;margin:24px auto;padding:0 16px;color:#222;}
 h1{font-size:22px;} h3{margin:20px 0 4px;font-size:14px;color:#555;}
@@ -52,7 +53,7 @@ input[type=text]{padding:9px;border:1px solid #ccc;border-radius:8px;width:74px;
 pre{background:#0e1116;color:#d6deeb;padding:14px;border-radius:8px;overflow:auto;max-height:320px;font-size:13px;}
 small{color:#777;}form{display:inline;}
 </style></head><body>
-<h1>블로그 자동화 대시보드</h1>
+<h1>WordPress 블로그 자동화 대시보드</h1>
 <p><a href="/policy" style="display:inline-block;background:#2f9e6f;color:#fff;padding:10px 14px;border-radius:8px;text-decoration:none;font-weight:bold">국가정책·티스토리 작업실 열기</a></p>
 <div class="status">
 자동발행: <span class="cur">%%SCHED%%</span> (매일 %%TIME%%) &nbsp;·&nbsp;
@@ -187,8 +188,16 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-if __name__ == "__main__":
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="WordPress·티스토리 로컬 대시보드")
+    parser.add_argument("--path", choices=("/", "/policy"), default="/")
+    args = parser.parse_args(argv)
     port = _pick_port(PORT)
-    threading.Timer(1.0, lambda: webbrowser.open(f"http://localhost:{port}")).start()
-    print(f"대시보드 실행 중 → http://localhost:{port}  (종료하려면 이 창에서 Ctrl+C)")
+    start_url = f"http://localhost:{port}{args.path if args.path != '/' else ''}"
+    threading.Timer(1.0, lambda: webbrowser.open(start_url)).start()
+    print(f"대시보드 실행 중 → {start_url}  (종료하려면 이 창에서 Ctrl+C)")
     HTTPServer(("127.0.0.1", port), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()

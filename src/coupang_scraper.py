@@ -159,6 +159,7 @@ def collect_links(page, keyword: str, limit: int = 5, rocket_only: bool = True) 
     out, seen = [], set()
     idx, max_tries = 0, limit * 5
     while len(out) < limit and idx < max_tries:
+        rocket_confirmed = bool(rocket_only)
         page.goto(SEARCH_HASH.format(kw=quote(keyword)), wait_until="domcontentloaded")
         try:
             page.wait_for_selector(".product-item", timeout=15000)
@@ -169,6 +170,7 @@ def collect_links(page, keyword: str, limit: int = 5, rocket_only: bool = True) 
         items = page.query_selector_all(".product-item")
         if not items:
             # 필터로 0개가 되면 필터 없이 재시도(해당 키워드에 로켓 상품이 없는 경우)
+            rocket_confirmed = False
             page.goto(SEARCH_HASH.format(kw=quote(keyword)), wait_until="domcontentloaded")
             try:
                 page.wait_for_selector(".product-item", timeout=15000)
@@ -190,6 +192,7 @@ def collect_links(page, keyword: str, limit: int = 5, rocket_only: bool = True) 
             continue
         seen.add(info["name"])
         info["url"] = link
+        info["rocket"] = rocket_confirmed
         out.append(info)
     return out
 

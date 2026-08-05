@@ -7,12 +7,13 @@ import platform
 import subprocess
 from pathlib import Path
 
-from . import policy_package, policy_sources, policy_store
+from . import affiliate, policy_package, policy_sources, policy_store
 from .policy_prompts import generate_policy_draft
 
 
 def collect() -> list[dict]:
     items = policy_sources.collect_gov24()
+    policy_store.set_workspace_setting("last_full_collection_at", policy_store.now_iso())
     stats = policy_sources.LAST_COLLECTION_STATS
     print(
         f"보조금24 {stats.get('scanned', len(items))}건 검사 → "
@@ -25,6 +26,7 @@ def collect() -> list[dict]:
 
 def recommended_candidates(limit: int = 20) -> list[dict]:
     count = max(1, min(limit, 200))
+    prune_expired_candidates()
     pool = policy_store.list_candidates(status="ready", limit=200)
     selected: list[dict] = []
     category_counts: dict[str, int] = {}
@@ -37,6 +39,18 @@ def recommended_candidates(limit: int = 20) -> list[dict]:
         selected.append(best)
         category_counts[best["category"]] = category_counts.get(best["category"], 0) + 1
     return selected
+
+
+def prune_expired_candidates() -> int:
+    """캐시에 이미 종료일이 명시된 후보를 외부 호출 없이 추천 풀에서 제거한다."""
+    expired = 0
+    for item in policy_store.list_candidates(status="ready", limit=500):
+        error = policy_sources.expired_application_error(item)
+        if not error:
+            continue
+        policy_store.set_candidate_status(item["id"], "expired", error)
+        expired += 1
+    return expired
 
 
 def generate_recommended(count: int = 1, image_provider: str = "openai") -> list[dict]:
@@ -54,7 +68,15 @@ def import_url(url: str, pasted_text: str = "") -> dict:
     return candidate
 
 
-def generate_candidate(candidate_id: str, image_provider: str = "openai") -> dict:
+def generate_candidate(
+    candidate_id: str, image_provider: str = "openai", *,
+    generation_mode: str = "manual", automation_run_id: int | None = None,
+    coupang_product_urls: list[str] | tuple[str, ...] | None = None,
+    coupang_assets: list[str] | tuple[str, ...] | None = None,
+) -> dict:
+    asset_sources = [*(coupang_assets or []), *(coupang_product_urls or [])]
+    affiliate.parse_coupang_assets(asset_sources)
+    print(f"[진행 1/6] 공식 정책 최신 정보 확인 · 후보 {candidate_id}", flush=True)
     candidate = policy_store.get_candidate(candidate_id)
     if not candidate:
         raise KeyError(f"정책 후보를 찾을 수 없습니다: {candidate_id}")
@@ -65,11 +87,23 @@ def generate_candidate(candidate_id: str, image_provider: str = "openai") -> dic
         candidate = policy_store.get_candidate(candidate_id) or candidate
     errors = policy_sources.validate_for_generation(candidate)
     if errors:
-        raise RuntimeError("정책 후보를 생성할 수 없습니다: " + " ".join(errors))
+        message = "정책 후보를 생성할 수 없습니다: " + " ".join(errors)
+        status = "expired" if any("종료" in error for error in errors) else "failed"
+        policy_store.set_candidate_status(candidate_id, status, message)
+        raise RuntimeError(message)
     policy_store.set_candidate_status(candidate_id, "generating")
     try:
+        print(
+            f"[진행 2/6] '{candidate['title']}' 글 초안 생성 요청 · LLM 응답 대기(보통 1~3분)",
+            flush=True,
+        )
         draft = generate_policy_draft(candidate)
-        package = policy_package.create_package(candidate, draft, image_provider=image_provider)
+        print(f"[진행 3/6] 초안 검증 완료 · 제목: {draft['title']}", flush=True)
+        package = policy_package.create_package(
+            candidate, draft, image_provider=image_provider,
+            generation_mode=generation_mode, automation_run_id=automation_run_id,
+            coupang_assets=asset_sources,
+        )
     except Exception as exc:
         policy_store.set_candidate_status(candidate_id, "failed", str(exc))
         raise
@@ -99,7 +133,8 @@ def copy_content(package_id: str, part: str) -> str:
     }
     if part not in files:
         raise ValueError(f"복사 대상이 올바르지 않습니다: {part}")
-    text = files[part].read_text(encoding="utf-8")
+    # 사람용 산출물은 UTF-8 BOM을 포함할 수 있다. 클립보드에는 BOM 문자를 보내지 않는다.
+    text = files[part].read_text(encoding="utf-8-sig")
     system = platform.system()
     command = ["pbcopy"] if system == "Darwin" else ["clip"] if system == "Windows" else None
     if command is None:
