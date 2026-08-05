@@ -46,7 +46,8 @@ def _init(conn: sqlite3.Connection) -> None:
             checked_at TEXT NOT NULL,
             score INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'ready',
-            last_error TEXT NOT NULL DEFAULT ''
+            last_error TEXT NOT NULL DEFAULT '',
+            generation_started_at TEXT NOT NULL DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS packages (
             id TEXT PRIMARY KEY,
@@ -96,11 +97,16 @@ def _init(conn: sqlite3.Connection) -> None:
             ON seo_audits(package_id, phase, checked_at DESC);
         """
     )
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(packages)")}
-    if "generation_mode" not in columns:
+    package_columns = {row[1] for row in conn.execute("PRAGMA table_info(packages)")}
+    if "generation_mode" not in package_columns:
         conn.execute("ALTER TABLE packages ADD COLUMN generation_mode TEXT NOT NULL DEFAULT 'manual'")
-    if "automation_run_id" not in columns:
+    if "automation_run_id" not in package_columns:
         conn.execute("ALTER TABLE packages ADD COLUMN automation_run_id INTEGER")
+    candidate_columns = {row[1] for row in conn.execute("PRAGMA table_info(candidates)")}
+    if "generation_started_at" not in candidate_columns:
+        conn.execute(
+            "ALTER TABLE candidates ADD COLUMN generation_started_at TEXT NOT NULL DEFAULT ''"
+        )
     conn.commit()
 
 
@@ -112,8 +118,8 @@ def upsert_candidate(candidate: dict, path: Path | None = None) -> None:
             INSERT INTO candidates (
                 id, source_type, external_id, title, category, agency, region,
                 source_url, official, facts_json, source_updated_at, checked_at,
-                score, status, last_error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                score, status, last_error, generation_started_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 source_type=excluded.source_type,
                 external_id=excluded.external_id,
@@ -130,7 +136,10 @@ def upsert_candidate(candidate: dict, path: Path | None = None) -> None:
                 status=CASE
                     WHEN candidates.status IN ('generated', 'generating')
                     THEN candidates.status ELSE excluded.status END,
-                last_error=excluded.last_error
+                last_error=excluded.last_error,
+                generation_started_at=CASE
+                    WHEN candidates.status='generating' THEN candidates.generation_started_at
+                    ELSE excluded.generation_started_at END
             """,
             (
                 candidate["id"], candidate["source_type"], candidate.get("external_id", ""),
@@ -140,6 +149,7 @@ def upsert_candidate(candidate: dict, path: Path | None = None) -> None:
                 json.dumps(facts, ensure_ascii=False), candidate.get("source_updated_at", ""),
                 candidate.get("checked_at", now_iso()), int(candidate.get("score", 0)),
                 candidate.get("status", "ready"), candidate.get("last_error", ""),
+                candidate.get("generation_started_at", ""),
             ),
         )
 
@@ -195,10 +205,40 @@ def set_candidate_status(
     candidate_id: str, status: str, error: str = "", path: Path | None = None
 ) -> None:
     with _connect(path) as conn:
+        started_at = now_iso() if status == "generating" else ""
         conn.execute(
-            "UPDATE candidates SET status=?, last_error=? WHERE id=?",
-            (status, error, candidate_id),
+            "UPDATE candidates SET status=?, last_error=?, generation_started_at=? WHERE id=?",
+            (status, error, started_at, candidate_id),
         )
+
+
+def recover_stale_generating(
+    stale_minutes: int = 60, path: Path | None = None,
+) -> list[dict]:
+    """중단된 생성 상태를 다시 선택 가능한 ready 상태로 안전하게 복구한다."""
+    threshold = datetime.now(timezone.utc) - timedelta(minutes=max(1, stale_minutes))
+    recovered: list[dict] = []
+    with _connect(path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        rows = conn.execute(
+            "SELECT id, title, generation_started_at FROM candidates WHERE status='generating'"
+        ).fetchall()
+        for row in rows:
+            started = _parse_iso(row["generation_started_at"])
+            if started and started.astimezone(timezone.utc) > threshold:
+                continue
+            message = (
+                "이전 글 생성 작업이 정상 종료되지 않아 자동 복구됨"
+                + (f" (시작: {row['generation_started_at']})" if row["generation_started_at"] else "")
+            )
+            conn.execute(
+                "UPDATE candidates SET status='ready', last_error=?, generation_started_at='' "
+                "WHERE id=? AND status='generating'",
+                (message, row["id"]),
+            )
+            recovered.append({"id": row["id"], "title": row["title"], "message": message})
+        conn.commit()
+    return recovered
 
 
 def save_package(package: dict, path: Path | None = None) -> None:

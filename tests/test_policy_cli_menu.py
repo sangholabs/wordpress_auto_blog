@@ -191,6 +191,16 @@ def test_affiliate_settings_can_replace_package_product_links(monkeypatch):
     assert events == [("post-1", ["https://link.coupang.com/a/one", "https://link.coupang.com/a/two"])]
 
 
+def test_coupang_prompt_accepts_single_line_html_directly(monkeypatch):
+    iframe = '<iframe src="https://coupa.ng/cox0qY" width="120" height="240"></iframe>'
+    values = iter([iframe, "0"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(values))
+    monkeypatch.setattr(
+        policy_cli.policy_settings, "get", lambda: {"coupang_max_blocks": 2},
+    )
+    assert policy_cli._prompt_coupang_assets() == [iframe]
+
+
 @pytest.mark.parametrize(("answer", "enabled"), [("1", True), ("2", False)])
 def test_image_settings_submenu_is_tistory_scoped(monkeypatch, answer, enabled):
     events = []

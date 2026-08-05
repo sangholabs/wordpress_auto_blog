@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from . import (
     affiliate, policy_package, policy_pages, policy_schedule_task, policy_seo,
-    policy_service, policy_settings, policy_store,
+    policy_service, policy_settings, policy_storage, policy_store,
 )
 from .config import ROOT
 from .policy_sources import POLICY_CATEGORIES
@@ -105,6 +105,7 @@ def index_page(message: str = "") -> str:
     settings = policy_settings.get()
     schedule_status = "켜짐" if policy_schedule_task.status() else "꺼짐"
     last_collect = str(policy_store.get_workspace_setting("last_full_collection_at", "없음"))[:16]
+    storage = policy_storage.status()
     message_html = f'<div class="panel warn">{html.escape(message)}</div>' if message else ""
     category_options = "".join(f'<option value="{html.escape(cat)}">{html.escape(cat)}</option>' for cat in POLICY_CATEGORIES)
     body = f"""{message_html}
@@ -120,9 +121,10 @@ def index_page(message: str = "") -> str:
 <label>개수 <input name="coupang_max_blocks" type="number" min="1" max="3" value="{settings['coupang_max_blocks']}" style="width:60px"></label>
 <label>로켓 <select name="rocket_only"><option value="true" {'selected' if settings['rocket_only'] else ''}>전용</option><option value="false" {'selected' if not settings['rocket_only'] else ''}>전체</option></select></label>
 <label>이미지 <select name="images_enabled"><option value="true" {'selected' if settings['images_enabled'] else ''}>대표+본문 생성</option><option value="false" {'selected' if not settings['images_enabled'] else ''}>생성 안 함</option></select></label>
+<label>Supabase <select name="supabase_upload_enabled"><option value="true" {'selected' if settings['supabase_upload_enabled'] else ''}>자동 업로드</option><option value="false" {'selected' if not settings['supabase_upload_enabled'] else ''}>사용 안 함</option></select></label>
 <button>티스토리 설정 저장</button></div></form>
 <div class="row"><form method="post" action="/policy/pages"><button class="gray">애드센스 필수 페이지 패키지 만들기</button></form><a class="btn orange" href="https://partners.coupang.com/" target="_blank" rel="noopener">쿠팡 배너 만들기</a></div>
-<p class="muted">WordPress 설정과 독립적으로 저장됩니다. API 키·Claude 인증·쿠팡 배너 파일만 공유합니다. 쿠팡 연결 방식: {html.escape(affiliate.monetization_mode())}</p></section>
+<p class="muted">WordPress 설정과 독립적으로 저장됩니다. API 키·Claude 인증·쿠팡 배너 파일만 공유합니다. 쿠팡 연결 방식: {html.escape(affiliate.monetization_mode())} · Supabase 환경변수: {'완료' if storage['configured'] else '설정 필요'} / {html.escape(storage['bucket'])}</p></section>
 <div class="grid"><section class="panel"><h2>정책 수집</h2>
 <form method="post" action="/policy/collect"><button class="green">보조금24 후보 수집</button></form>
 <p class="muted">DATA_GO_KR_API_KEY가 필요합니다. 전국 정책과 아래 선택 지역만 수집합니다.</p>
@@ -207,6 +209,7 @@ def package_page(package_id: str) -> str:
 <section class="grid">{''.join(images)}</section><section class="panel"><h2>검증 경고</h2>{warnings}</section>
 <section class="panel"><h2>SEO 점검</h2><p><strong>{seo.get('score', 0)}점 · {html.escape(seo.get('status', 'review'))}</strong><br><strong>핵심 키워드:</strong> {html.escape(seo.get('primary_keyword', ''))}<br><strong>메타 설명:</strong> {html.escape(seo.get('meta_description', manifest.get('meta_description', '')))}</p>{seo_issues}<form method="post" action="/policy/seo"><input type="hidden" name="package_id" value="{package_id}"><button>게시 전 SEO 다시 검사</button></form><p class="muted">상세 내용은 07_SEO_게시정보.txt와 seo/ 폴더에 저장됩니다.</p></section>
 <section class="panel"><h2>쿠팡 파트너스 광고 소재</h2><p>{html.escape(asset_summary)}</p><form method="post" action="/policy/coupang-assets"><input type="hidden" name="package_id" value="{package_id}">{asset_fields}<button class="orange">광고 소재 저장·본문 재빌드</button></form><p class="muted">직접 입력한 소재가 API·공용 배너·검색 링크보다 우선합니다. 모두 지우고 저장하면 기본 연결 방식으로 돌아갑니다. iframe/script는 티스토리가 제거할 수 있으므로 비공개 미리보기에서 확인하세요.</p></section>
+<section class="panel"><h2>Supabase 게시 이미지</h2><form method="post" action="/policy/upload-images"><input type="hidden" name="package_id" value="{package_id}"><button class="green">이미지 업로드·게시 HTML 재빌드</button></form><p class="muted">현재 대표·본문 이미지 3장을 공개 버킷에 올리고 Supabase URL을 HTML의 img 태그에 삽입합니다.</p></section>
 <section class="panel"><h2>실패 이미지 재시도</h2><form method="post" action="/policy/retry-images"><input type="hidden" name="package_id" value="{package_id}"><select name="provider"><option value="openai">OpenAI</option><option value="pollinations">Pollinations</option></select> <button class="orange">없는 이미지 모두 재시도</button></form></section>
 <section class="panel"><h2>티스토리 게시 완료 기록</h2><form method="post" action="/policy/published"><input type="hidden" name="package_id" value="{package_id}"><div class="row"><input name="url" type="url" style="flex:1" placeholder="https://내블로그.tistory.com/..." value="{html.escape(manifest.get('tistory_url',''))}"><button class="green">게시 완료 표시</button></div></form></section>"""
     return _layout("티스토리 패키지", body)
@@ -284,6 +287,7 @@ def handle_post(handler) -> bool:
             for key in (
                 "schedule_time", "packages_per_day", "coupang_enabled",
                 "coupang_layout", "coupang_max_blocks", "rocket_only", "images_enabled",
+                "supabase_upload_enabled",
             ):
                 if key in data:
                     policy_settings.set_value(key, data[key][0])
@@ -333,6 +337,11 @@ def handle_post(handler) -> bool:
         elif parsed.path == "/policy/seo":
             package_id = data.get("package_id", [""])[0]
             policy_seo.run_local_for_package(package_id)
+            _redirect(handler, f"/policy/package?id={package_id}")
+            return True
+        elif parsed.path == "/policy/upload-images":
+            package_id = data.get("package_id", [""])[0]
+            policy_package.upload_package_images(package_id)
             _redirect(handler, f"/policy/package?id={package_id}")
             return True
         elif parsed.path in {"/policy/coupang-assets", "/policy/coupang-links"}:

@@ -311,6 +311,6 @@ def cards_html(products: list[dict]) -> str:
 def monetization_mode() -> str:
     if env("COUPANG_ACCESS_KEY") and env("COUPANG_SECRET_KEY"):
         return "api"
-    if (ROOT / "config" / "coupang_widget.html").exists():
+    if load_widgets():
         return "widget"
     return "search-link"

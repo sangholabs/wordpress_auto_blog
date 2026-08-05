@@ -12,7 +12,8 @@ from pathlib import Path
 
 from . import (
     affiliate, banner_setup, policy_package, policy_pages, policy_runner,
-    policy_schedule_task, policy_seo, policy_service, policy_settings, policy_store,
+    policy_schedule_task, policy_seo, policy_service, policy_settings, policy_storage,
+    policy_store,
 )
 from .config import ROOT, env
 
@@ -54,9 +55,11 @@ def _print_packages() -> list[dict]:
 
 
 def _workspace_status() -> None:
+    policy_service.recover_interrupted_candidates()
     settings = policy_settings.get()
     ready = len(policy_store.list_candidates(status="ready", limit=200))
     incomplete = len(policy_store.list_packages(status="needs_image_retry", limit=200))
+    legacy = len(policy_package.outdated_packages())
     last_collect = str(policy_store.get_workspace_setting("last_full_collection_at", "없음"))[:16]
     on = lambda value: "켜짐" if value else "꺼짐"
     print("── 티스토리 작업실 설정 ───────────────────")
@@ -64,7 +67,10 @@ def _workspace_status() -> None:
         f" 자동생성:{on(policy_schedule_task.status())} / 매일 {settings['schedule_time']} / "
         f"하루 {settings['packages_per_day']}편"
     )
-    print(f" 추천후보:{ready}건 / 마지막 수집:{last_collect} / 이미지 재시도:{incomplete}건")
+    print(
+        f" 추천후보:{ready}건 / 마지막 수집:{last_collect} / "
+        f"이미지 재시도:{incomplete}건 / 구형패키지:{legacy}건"
+    )
     print(
         f" 쿠팡:{on(settings['coupang_enabled'])}({affiliate.monetization_mode()}) / "
         f"배너:{settings['coupang_layout']}/{settings['coupang_max_blocks']}개 / "
@@ -74,6 +80,11 @@ def _workspace_status() -> None:
         f" 글엔진:{env('LLM_PROVIDER', 'claude_code')} / "
         f"이미지:{settings['image_provider']}/{on(settings['images_enabled'])} / "
         f"SEO 통과:{settings['seo_pass_score']}점 이상"
+    )
+    storage = policy_storage.status()
+    print(
+        f" Supabase이미지:{on(storage['enabled'])} / "
+        f"환경변수:{'완료' if storage['configured'] else '필요'} / 버킷:{storage['bucket']}"
     )
     print("────────────────────────────────────────────")
 
@@ -156,9 +167,25 @@ def _claude_login() -> None:
 
 
 def _image_settings_menu() -> None:
-    enabled = input("대표 1장·본문 2장 생성  1) 켜기  2) 끄기: ").strip() == "1"
-    policy_settings.set_value("images_enabled", enabled)
-    print(f"티스토리 이미지 생성: {'켜짐' if enabled else '꺼짐'}")
+    print("1) 새 글 이미지 생성 켜기  2) 새 글 이미지 생성 끄기")
+    print("3) Supabase 자동 업로드 켜기/끄기  4) 기존 패키지 지금 업로드  5) Supabase 설정 상태")
+    choice = input("선택: ").strip()
+    if choice in {"1", "2"}:
+        enabled = choice == "1"
+        policy_settings.set_value("images_enabled", enabled)
+        print(f"티스토리 이미지 생성: {'켜짐' if enabled else '꺼짐'}")
+    elif choice == "3":
+        enabled = input("1) 켜기  2) 끄기: ").strip() == "1"
+        policy_settings.set_value("supabase_upload_enabled", enabled)
+        print(f"Supabase 이미지 자동 업로드: {'켜짐' if enabled else '꺼짐'}")
+    elif choice == "4":
+        _print_packages()
+        package_id = input("글 ID: ").strip()
+        manifest = policy_package.upload_package_images(package_id)
+        print(f"Supabase 이미지 업로드 완료: {len(manifest['supabase']['images'])}장")
+    elif choice == "5":
+        state = policy_storage.verify_status()
+        print(json.dumps(state, ensure_ascii=False, indent=2))
 
 
 def _clipboard_text() -> str:
@@ -194,8 +221,10 @@ def _prompt_coupang_assets() -> list[str]:
             source = path.read_text(encoding="utf-8-sig")
         elif choice.startswith("https://"):
             source = choice
+        elif choice.startswith("<"):
+            source = choice
         else:
-            print("1, 2, 3, 0 중에서 선택하세요.")
+            print("1, 2, 3, 0을 선택하거나 한 줄짜리 URL/HTML/iframe 코드를 바로 붙여넣으세요.")
             continue
         try:
             parsed = affiliate.parse_coupang_asset(source)
@@ -228,7 +257,7 @@ def interactive() -> None:
 10. 패키지 폴더 열기 (글 ID)
 11. 패키지 ZIP 만들기 (글 ID)
 12. 티스토리 게시 완료 기록 (글 ID)
-13. 기존 패키지 HTML·SEO 파일 재빌드 (글 재생성 아님)
+13. 기존 패키지 HTML·SEO 파일 재빌드 (글 ID 또는 all)
 
  [자동 글 생성]
 14. 오늘 할당량 지금 즉시 생성
@@ -237,7 +266,7 @@ def interactive() -> None:
  [이미지]
 16. 이미지 1장 선택 재생성 (글 ID, 기존 이미지도 가능)
 17. 누락·실패 이미지 전체 재시도 (글 ID)
-18. 새 글의 대표·본문 이미지 생성 켜기/끄기
+18. 이미지 생성·Supabase 업로드 설정
 
  [SEO]
 19. SEO 검사 (게시 전/게시 URL, 글 재작성 안 함)
@@ -248,7 +277,7 @@ def interactive() -> None:
 
  [기타]
 22. 티스토리 대시보드 열기
-23. Claude 로그인 (티스토리 글 생성 엔진)
+23. Claude Code 로그인 (LLM_PROVIDER=claude_code일 때만)
 24. 티스토리 애드센스 필수 페이지 패키지
  0. 이전 메뉴
 ========================================================""")
@@ -283,7 +312,14 @@ def interactive() -> None:
                 _print_candidates(limit=10)
                 count = max(1, min(int(input("자동 생성할 편수(기본 1): ").strip() or "1"), 10))
                 provider = "pollinations" if input("이미지 1) OpenAI  2) Pollinations : ").strip() == "2" else "openai"
-                policy_service.generate_recommended(count, provider)
+                def prompt_assets(candidate: dict) -> list[str]:
+                    print(
+                        f"[{candidate['id']}] {candidate['title']}에 넣을 "
+                        "쿠팡 파트너스 소재를 선택하세요."
+                    )
+                    return _prompt_coupang_assets()
+
+                policy_service.generate_recommended(count, provider, prompt_assets)
             elif choice == "7":
                 _print_packages()
             elif choice == "8":
@@ -310,8 +346,17 @@ def interactive() -> None:
                 print("게시 완료로 표시했습니다.")
             elif choice == "13":
                 _print_packages()
-                package = policy_package.rebuild_package(input("글 ID: ").strip())
-                print(f"패키지 재빌드 완료: {package['path']}")
+                package_id = input("글 ID (구형 패키지 전체는 all): ").strip()
+                if package_id.lower() == "all":
+                    result = policy_package.rebuild_outdated_packages()
+                    print(
+                        f"구형 패키지 재빌드 완료: 성공 {result['rebuilt']}/{result['total']}건"
+                    )
+                    for error in result["errors"]:
+                        print(f"- {error}")
+                else:
+                    package = policy_package.rebuild_package(package_id)
+                    print(f"패키지 재빌드 완료: {package['path']}")
             elif choice == "14":
                 result = policy_runner.run(trigger_type="manual")
                 print(f"자동 생성 상태: {result['status']}")
@@ -407,9 +452,12 @@ def build_parser() -> argparse.ArgumentParser:
     settings.add_argument("action", choices=("show", "set"))
     settings.add_argument("key", nargs="?")
     settings.add_argument("value", nargs="?")
-    for name in ("preview", "open", "zip", "rebuild"):
+    for name in ("preview", "open", "zip"):
         cmd = sub.add_parser(name)
         cmd.add_argument("package_id")
+    rebuild = sub.add_parser("rebuild")
+    rebuild.add_argument("package_id", nargs="?")
+    rebuild.add_argument("--all", action="store_true", dest="rebuild_all")
     copy = sub.add_parser("copy")
     copy.add_argument("package_id")
     copy.add_argument("part", choices=("title", "html", "segment1", "segment2", "segment3", "tags"))
@@ -432,6 +480,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("claude-login")
     sub.add_parser("banner-setup")
     sub.add_parser("required-pages")
+    upload_images = sub.add_parser("upload-images")
+    upload_images.add_argument("package_id")
     sub.add_parser("reindex")
     sub.add_parser("interactive")
     return parser
@@ -456,6 +506,9 @@ def main(argv: list[str] | None = None) -> int:
         banner_setup.setup_banner()
     elif args.command == "required-pages":
         policy_pages.create_required_pages_package()
+    elif args.command == "upload-images":
+        manifest = policy_package.upload_package_images(args.package_id)
+        print(json.dumps(manifest.get("supabase", {}), ensure_ascii=False, indent=2))
     elif args.command == "generate":
         failures = []
         for candidate_id in args.candidate_ids:
@@ -520,7 +573,12 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "zip":
         print(policy_package.create_zip(args.package_id))
     elif args.command == "rebuild":
-        print(policy_package.rebuild_package(args.package_id)["path"])
+        if args.rebuild_all:
+            print(json.dumps(policy_package.rebuild_outdated_packages(), ensure_ascii=False, indent=2))
+        elif args.package_id:
+            print(policy_package.rebuild_package(args.package_id)["path"])
+        else:
+            raise ValueError("rebuild에는 글 ID 또는 --all이 필요합니다.")
     elif args.command == "mark-published":
         policy_package.mark_manifest_published(args.package_id, args.url)
         print("게시 완료로 표시했습니다.")

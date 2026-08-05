@@ -2,7 +2,12 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src import policy_service
+from src import policy_service, policy_store
+
+
+@pytest.fixture(autouse=True)
+def _disable_real_recovery(monkeypatch):
+    monkeypatch.setattr(policy_service, "recover_interrupted_candidates", lambda: [])
 
 
 def test_recommended_candidates_balances_categories(monkeypatch):
@@ -76,3 +81,71 @@ def test_generate_candidate_prints_progress_before_slow_steps(monkeypatch, capsy
     assert "[진행 2/6] '직장인 생활 지원' 글 초안 생성 요청" in output
     assert "LLM 응답 대기" in output
     assert "[진행 3/6] 초안 검증 완료" in output
+
+
+def test_generate_recommended_requests_assets_for_each_selected_candidate(monkeypatch):
+    candidates = [
+        {"id": "a", "title": "첫 정책"},
+        {"id": "b", "title": "둘째 정책"},
+    ]
+    generated = []
+    prompted = []
+    monkeypatch.setattr(policy_service, "recommended_candidates", lambda count: candidates[:count])
+    monkeypatch.setattr(
+        policy_service, "generate_candidate",
+        lambda candidate_id, provider, **kwargs: generated.append(
+            (candidate_id, provider, kwargs["coupang_assets"])
+        ) or {"id": candidate_id},
+    )
+
+    result = policy_service.generate_recommended(
+        2, "openai",
+        lambda candidate: prompted.append(candidate["id"]) or [f"https://link.coupang.com/a/{candidate['id']}"],
+    )
+
+    assert prompted == ["a", "b"]
+    assert generated == [
+        ("a", "openai", ["https://link.coupang.com/a/a"]),
+        ("b", "openai", ["https://link.coupang.com/a/b"]),
+    ]
+    assert [item["id"] for item in result] == ["a", "b"]
+
+
+def test_generate_recommended_continues_after_one_candidate_fails(monkeypatch):
+    candidates = [
+        {"id": "a", "title": "실패 정책"},
+        {"id": "b", "title": "성공 정책"},
+    ]
+    monkeypatch.setattr(policy_service, "recommended_candidates", lambda count: candidates)
+
+    def generate(candidate_id, *_args, **_kwargs):
+        if candidate_id == "a":
+            raise RuntimeError("일시 오류")
+        return {"id": candidate_id}
+
+    monkeypatch.setattr(policy_service, "generate_candidate", generate)
+    assert policy_service.generate_recommended(2) == [{"id": "b"}]
+
+
+def test_stale_generating_candidate_is_recovered_but_fresh_one_is_kept(tmp_path):
+    db = tmp_path / "policy.sqlite3"
+    base = {
+        "source_type": "url", "external_id": "", "category": "생활비·세금·환급",
+        "agency": "기관", "region": "전국", "source_url": "https://www.gov.kr/test",
+        "official": True, "facts": {"summary": "지원"}, "checked_at": datetime.now(timezone.utc).isoformat(),
+        "score": 50, "status": "ready",
+    }
+    policy_store.upsert_candidate({**base, "id": "old", "title": "중단 후보"}, db)
+    policy_store.upsert_candidate({**base, "id": "fresh", "title": "정상 생성 후보"}, db)
+    policy_store.set_candidate_status("old", "generating", path=db)
+    policy_store.set_candidate_status("fresh", "generating", path=db)
+    with policy_store._connect(db) as conn:
+        conn.execute(
+            "UPDATE candidates SET generation_started_at='2020-01-01T00:00:00+09:00' WHERE id='old'"
+        )
+
+    recovered = policy_store.recover_stale_generating(60, db)
+
+    assert [item["id"] for item in recovered] == ["old"]
+    assert policy_store.get_candidate("old", db)["status"] == "ready"
+    assert policy_store.get_candidate("fresh", db)["status"] == "generating"

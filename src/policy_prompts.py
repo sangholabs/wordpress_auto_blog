@@ -18,6 +18,46 @@ POLICY_SYSTEM = """너는 대한민국 정부 혜택을 쉽게 설명하는 한�
 핵심 키워드를 억지로 반복하지 않고 동의어와 관련 표현을 사용한다.
 응답은 설명이나 코드펜스 없이 유효한 JSON 객체 하나만 출력한다."""
 
+POLICY_DRAFT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "primary_keyword": {"type": "string"},
+        "secondary_keywords": {"type": "array", "items": {"type": "string"}},
+        "search_intent": {
+            "type": "string",
+            "enum": ["대상확인", "혜택확인", "신청방법", "마감확인"],
+        },
+        "suggested_slug": {"type": "string"},
+        "title": {"type": "string"},
+        "meta_description": {"type": "string"},
+        "category": {"type": "string", "enum": POLICY_CATEGORIES},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "markdown": {"type": "string"},
+        "image_briefs": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "slot": {"type": "string", "enum": ["featured", "body1", "body2"]},
+                    "section": {"type": "string"},
+                    "prompt": {"type": "string"},
+                    "alt": {"type": "string"},
+                    "caption": {"type": "string"},
+                },
+                "required": ["slot", "section", "prompt", "alt", "caption"],
+                "additionalProperties": False,
+            },
+        },
+        "coupang_queries": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": [
+        "primary_keyword", "secondary_keywords", "search_intent", "suggested_slug",
+        "title", "meta_description", "category", "tags", "markdown",
+        "image_briefs", "coupang_queries",
+    ],
+    "additionalProperties": False,
+}
+
 
 def build_policy_prompt(candidate: dict, validation_error: str = "") -> str:
     official_facts = {
@@ -160,7 +200,10 @@ def validate_draft(draft: dict) -> list[str]:
 def generate_policy_draft(candidate: dict) -> dict:
     last_error = ""
     for attempt in range(2):
-        raw = generate(build_policy_prompt(candidate, last_error), system=POLICY_SYSTEM)
+        raw = generate(
+            build_policy_prompt(candidate, last_error), system=POLICY_SYSTEM,
+            json_schema=POLICY_DRAFT_SCHEMA,
+        )
         try:
             draft = _json_object(raw)
             errors = validate_draft(draft)
@@ -180,7 +223,11 @@ def generate_policy_draft(candidate: dict) -> dict:
 
 def unsupported_fact_warnings(markdown: str, candidate: dict) -> list[str]:
     """출처에 없는 명시적 금액/날짜를 빠르게 찾아 검증 파일에 표시한다."""
-    source = json.dumps(candidate.get("facts", {}), ensure_ascii=False)
+    source = json.dumps(candidate, ensure_ascii=False)
+    source_dates = {
+        tuple(int(part) for part in match)
+        for match in re.findall(r"(20\d{2})[.\-/년]\s*(\d{1,2})[.\-/월]\s*(\d{1,2})", source)
+    }
     patterns = (
         r"\d[\d,]*(?:만|천)?\s*원",
         r"20\d{2}[.\-/년]\s*\d{1,2}(?:[.\-/월]\s*\d{1,2})?",
@@ -189,6 +236,13 @@ def unsupported_fact_warnings(markdown: str, candidate: dict) -> list[str]:
     warnings = []
     for pattern in patterns:
         for value in set(re.findall(pattern, markdown)):
+            date_match = re.search(
+                r"(20\d{2})[.\-/년]\s*(\d{1,2})(?:[.\-/월]\s*(\d{1,2}))?", value
+            )
+            if date_match and date_match.group(3):
+                date_parts = tuple(int(part) for part in date_match.groups())
+                if date_parts in source_dates:
+                    continue
             compact = re.sub(r"\s+", "", value)
             if compact not in re.sub(r"\s+", "", source):
                 warnings.append(f"출처 원문에서 같은 표기를 찾지 못함: {value}")

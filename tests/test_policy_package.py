@@ -114,7 +114,7 @@ def test_tistory_package_has_copy_friendly_structure(monkeypatch, tmp_path):
         assert segment_soup.find("article") is None
     manifest = json.loads((folder / "06_manifest.json").read_text(encoding="utf-8"))
     assert set(manifest["current_images"]) == {"featured", "body1", "body2"}
-    assert manifest["schema_version"] == 6
+    assert manifest["schema_version"] == 7
     assert manifest["seo"]["h1_in_body"] is False
     assert manifest["seo"]["image_alt_texts"]["featured"] == "가족 일러스트"
     assert "," not in manifest["seo"]["suggested_slug"]
@@ -172,6 +172,39 @@ A. 공식 안내에서 확인하세요.
     assert question.find("br") is not None
 
 
+def test_supabase_images_are_embedded_in_publish_html_and_segments():
+    manifest = {
+        "generation": {"images_enabled": True},
+        "draft": _draft(),
+        "current_images": {
+            "featured": "images/featured.jpg",
+            "body1": "images/body1.jpg",
+            "body2": "images/body2.jpg",
+        },
+        "supabase": {"images": {
+            slot: {
+                "local_path": f"images/{slot}.jpg",
+                "public_url": f"https://project.supabase.co/storage/v1/object/public/blog/{slot}.jpg",
+            }
+            for slot in ("featured", "body1", "body2")
+        }},
+    }
+    body = policy_package._image_placeholders(
+        policy_package._portable_html(_draft()["markdown"]), manifest,
+    )
+    soup = BeautifulSoup(body, "html.parser")
+    assert [figure["data-policy-image-slot"] for figure in soup.find_all("figure")] == [
+        "featured", "body1", "body2",
+    ]
+    assert all("supabase.co" in image["src"] for image in soup.find_all("img"))
+    assert all(image.get("alt") for image in soup.find_all("img"))
+
+    segments = policy_package._split_segments(f'<article style="x">{body}</article>')
+    assert 'data-policy-image-slot="body1"' in segments[0]
+    assert 'data-policy-image-slot="body2"' in segments[1]
+    assert sum(segment.count("supabase.co") for segment in segments) == 3
+
+
 def test_policy_affiliate_can_be_disabled(monkeypatch):
     monkeypatch.setattr(policy_package, "get_settings", lambda: {
         "policy_workspace": {"coupang_enabled": False},
@@ -179,6 +212,17 @@ def test_policy_affiliate_can_be_disabled(monkeypatch):
     })
     blocks, warnings, mode = policy_package._affiliate_blocks(_draft(), "정책")
     assert blocks == [] and warnings == [] and mode == "disabled"
+
+
+def test_grouped_h2_never_duplicates_affiliate_blocks():
+    body = "".join(f"<h2>소제목 {index}</h2><p>본문</p>" for index in range(1, 5))
+    rendered = policy_package._place_affiliates(
+        body, ["<aside>광고1</aside>", "<aside>광고2</aside>", "<aside>광고3</aside>"],
+        "grouped_h2",
+    )
+    assert rendered.count("광고1") == 1
+    assert rendered.count("광고2") == 1
+    assert rendered.count("광고3") == 1
 
 
 def test_manual_coupang_product_links_override_search_fallback(monkeypatch):
@@ -257,3 +301,22 @@ def test_reindex_restores_sqlite_from_manifest(monkeypatch, tmp_path):
     monkeypatch.setattr(policy_package.policy_store, "DB_PATH", tmp_path / "restored.sqlite3")
     assert policy_package.reindex_packages() == 1
     assert policy_package.policy_store.get_package("post-1")["path"] == str(folder)
+
+
+def test_rebuild_outdated_packages_continues_after_failure(monkeypatch):
+    targets = [
+        {"id": "old-1", "title": "첫 글", "schema_version": 4},
+        {"id": "old-2", "title": "둘째 글", "schema_version": 6},
+    ]
+    monkeypatch.setattr(policy_package, "outdated_packages", lambda: targets)
+
+    def rebuild(package_id):
+        if package_id == "old-1":
+            raise RuntimeError("재빌드 실패")
+        return {"id": package_id}
+
+    monkeypatch.setattr(policy_package, "rebuild_package", rebuild)
+    result = policy_package.rebuild_outdated_packages()
+    assert result["total"] == 2
+    assert result["rebuilt"] == 1
+    assert result["errors"] == ["old-1: 재빌드 실패"]

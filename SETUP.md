@@ -136,6 +136,15 @@ python -m src.policy_cli required-pages
 
 글별 쿠팡 광고는 상품 URL뿐 아니라 쿠팡 파트너스가 발급한 링크+이미지 HTML, iframe, 카테고리/다이나믹 배너 `PartnersCoupang.G` 스크립트를 받을 수 있다. 터미널에서는 코드를 클립보드에 복사하고 **클립보드 코드** 입력을 선택한다. 파일로 적용하려면 `python -m src.policy_cli coupang-assets 글ID --file 배너코드.html`을 사용한다. iframe/script는 티스토리에서 제거될 수 있으므로 비공개 게시 후 확인한다.
 
+### 4-B. 티스토리 이미지용 Supabase Storage
+
+1. Supabase 프로젝트의 Storage에서 `tistory-images` 버킷을 **Public bucket**으로 만든다.
+2. `.env`에 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_STORAGE_BUCKET=tistory-images`를 입력한다. 레거시 프로젝트는 `SUPABASE_SERVICE_ROLE_KEY`도 사용할 수 있다.
+3. secret/service_role 키는 로컬 `.env`에만 두고 GitHub, 티스토리 HTML, 프론트엔드 코드에 절대 넣지 않는다.
+4. 작업실 18번에서 Supabase 상태를 확인한다. 기존 글은 `python -m src.policy_cli upload-images 글ID`로 업로드·재빌드한다.
+
+설정 후 생성되는 대표 1장과 본문 2장은 `policy-tistory/YYYY/MM/DD/글ID/` 경로에 업로드된다. 게시용 전체 HTML과 segments 파일에는 공개 URL의 `<img>`, ALT, 캡션이 들어간다. 티스토리가 외부 이미지를 대표 이미지로 자동 지정하지 않으면 대표 파일만 직접 업로드해 대표로 지정한다.
+
 OpenAI 이미지 생성이 일부 실패하면 글 패키지는 `needs_image_retry` 상태로 남는다. 다음 명령 또는 작업실 메뉴에서 누락 이미지만 재시도할 수 있으며 Pollinations 전환은 사용자가 직접 선택한 경우에만 실행된다.
 
 ```sh

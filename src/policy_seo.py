@@ -50,6 +50,18 @@ def _rel_tokens(node) -> set[str]:
     return {str(item).lower() for item in value}
 
 
+def _appears_before(soup: BeautifulSoup, earlier, later_nodes: list) -> bool:
+    """파서가 속성 순서를 바꿔도 DOM 순서만으로 앞뒤를 판단한다."""
+    targets = {id(earlier): "earlier", **{id(node): "later" for node in later_nodes}}
+    for node in soup.descendants:
+        kind = targets.get(id(node))
+        if kind == "earlier":
+            return True
+        if kind == "later":
+            return False
+    return False
+
+
 def audit_local(manifest: dict, full_html: str, *, duplicate_title: bool = False) -> dict:
     settings = get_policy_settings()
     soup = BeautifulSoup(full_html, "html.parser")
@@ -98,6 +110,19 @@ def audit_local(manifest: dict, full_html: str, *, duplicate_title: bool = False
     current_images = manifest.get("current_images", {})
     score -= _check(checks, all(current_images.get(slot) for slot in ("featured", "body1", "body2")),
                     "image_files", "생성되지 않은 대표 또는 본문 이미지가 있습니다.", 8)
+    storage = manifest.get("supabase", {})
+    if storage.get("enabled") and storage.get("configured"):
+        remote_images = storage.get("images", {})
+        remote_ready = all(
+            remote_images.get(slot, {}).get("public_url")
+            and remote_images.get(slot, {}).get("local_path") == current_images.get(slot)
+            and soup.find("img", src=remote_images[slot]["public_url"])
+            for slot in ("featured", "body1", "body2")
+        )
+        score -= _check(
+            checks, remote_ready, "supabase_images",
+            "Supabase 대표·본문 이미지 URL이 게시 HTML에 모두 삽입되지 않았습니다.", 8,
+        )
     tables = soup.find_all("table")
     responsive = all(table.get("data-policy-responsive-table") == "true" and table.parent.get("role") == "region" for table in tables)
     score -= _check(checks, responsive, "responsive_tables",
@@ -119,9 +144,10 @@ def audit_local(manifest: dict, full_html: str, *, duplicate_title: bool = False
     disclosure_ok = not affiliate_present or "쿠팡 파트너스 활동" in full_html
     disclosure_before = True
     if affiliate_present and disclosure_ok:
-        positions = [full_html.find(str(node)) for node in [*affiliate_links, *affiliate_assets]]
-        positions = [position for position in positions if position >= 0]
-        disclosure_before = bool(positions) and full_html.find("쿠팡 파트너스 활동") < min(positions)
+        disclosure_text = soup.find(string=lambda value: value and "쿠팡 파트너스 활동" in value)
+        disclosure_before = bool(disclosure_text) and _appears_before(
+            soup, disclosure_text, [*affiliate_links, *affiliate_assets]
+        )
     score -= _check(checks, sponsored and disclosure_ok and disclosure_before, "affiliate_disclosure",
                     "쿠팡 링크의 sponsored 속성 또는 첫 광고 앞 제휴 고지문구를 확인하세요.", 8)
     empty_links = [a for a in soup.find_all("a") if not str(a.get("href", "")).strip()]
@@ -231,7 +257,10 @@ def audit_published_html(
     content_images = [img for img in content.find_all("img") if not str(img.get("src", "")).startswith("data:")]
     score -= _check(checks, not content_images or all(str(img.get("alt", "")).strip() for img in content_images),
                     "published_image_alt", "ALT가 비어 있는 게시 이미지가 있습니다.", 8)
-    score -= _check(checks, "data-policy-image-slot" not in page_html, "image_placeholders",
+    remaining_placeholders = content.select(
+        "div[data-policy-image-slot]:not([data-policy-image-source='supabase'])"
+    )
+    score -= _check(checks, not remaining_placeholders, "image_placeholders",
                     "게시 본문에 이미지 업로드 자리 표시가 남아 있습니다.", 8)
     affiliate_links = [
         a for a in content.find_all("a", href=True)

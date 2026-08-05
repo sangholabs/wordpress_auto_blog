@@ -24,7 +24,7 @@ def _record_call(provider: str):
     USAGE_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _via_claude_code(prompt: str, system: str | None) -> str:
+def _via_claude_code(prompt: str, system: str | None, json_schema: dict | None = None) -> str:
     # 로컬 Claude Code CLI 를 헤드리스(-p)로 호출. 구독 로그인 인증을 사용한다.
     # 사전조건: PC에 Claude Code 설치 + `claude` 로그인 완료.
     # 플래그 버전 차이를 피하려고 system 을 본문에 합쳐 stdin 으로 전달한다.
@@ -49,7 +49,7 @@ def _via_claude_code(prompt: str, system: str | None) -> str:
     return result.stdout.strip()
 
 
-def _via_gemini(prompt: str, system: str | None) -> str:
+def _via_gemini(prompt: str, system: str | None, json_schema: dict | None = None) -> str:
     import google.generativeai as genai
 
     if not env("GEMINI_API_KEY"):
@@ -62,7 +62,7 @@ def _via_gemini(prompt: str, system: str | None) -> str:
     return model.generate_content(prompt).text.strip()
 
 
-def _via_anthropic(prompt: str, system: str | None) -> str:
+def _via_anthropic(prompt: str, system: str | None, json_schema: dict | None = None) -> str:
     import anthropic
 
     if not env("ANTHROPIC_API_KEY"):
@@ -71,16 +71,27 @@ def _via_anthropic(prompt: str, system: str | None) -> str:
         )
     client = anthropic.Anthropic(api_key=env("ANTHROPIC_API_KEY"))
     cfg = _llm_cfg()
+    request = {
+        "model": cfg.get("anthropic_model", "claude-sonnet-4-6"),
+        "max_tokens": max(int(cfg.get("max_tokens", 4096)), 8192) if json_schema else int(cfg.get("max_tokens", 4096)),
+        "system": system or "",
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if json_schema:
+        request["output_config"] = {
+            "format": {"type": "json_schema", "schema": json_schema},
+        }
     msg = client.messages.create(
-        model=cfg.get("anthropic_model", "claude-sonnet-4-6"),
-        max_tokens=cfg.get("max_tokens", 4096),
-        system=system or "",
-        messages=[{"role": "user", "content": prompt}],
+        **request,
     )
+    if getattr(msg, "stop_reason", "") == "max_tokens":
+        raise RuntimeError(
+            "Anthropic 응답이 최대 토큰에서 잘렸습니다. config/settings.yaml의 llm.max_tokens를 늘리세요."
+        )
     return msg.content[0].text.strip()
 
 
-def generate(prompt: str, system: str | None = None) -> str:
+def generate(prompt: str, system: str | None = None, *, json_schema: dict | None = None) -> str:
     provider = env("LLM_PROVIDER", "claude_code")
     fn = {
         "claude_code": _via_claude_code,
@@ -92,6 +103,6 @@ def generate(prompt: str, system: str | None = None) -> str:
             f"알 수 없는 LLM_PROVIDER: '{provider}'. "
             "claude_code | gemini | anthropic 중 하나여야 합니다. (.env 확인)"
         )
-    text = fn(prompt, system)
+    text = fn(prompt, system, json_schema)
     _record_call(provider)
     return text

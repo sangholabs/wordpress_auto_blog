@@ -6,12 +6,26 @@ import os
 import platform
 import subprocess
 from pathlib import Path
+from typing import Callable
 
 from . import affiliate, policy_package, policy_sources, policy_store
 from .policy_prompts import generate_policy_draft
+from .policy_settings import get as get_policy_settings
+
+
+def recover_interrupted_candidates() -> list[dict]:
+    minutes = int(get_policy_settings().get("generation_stale_minutes", 60))
+    recovered = policy_store.recover_stale_generating(minutes)
+    if recovered:
+        print(
+            f"[복구] 중단된 글 생성 후보 {len(recovered)}건을 다시 선택 가능 상태로 변경했습니다.",
+            flush=True,
+        )
+    return recovered
 
 
 def collect() -> list[dict]:
+    recover_interrupted_candidates()
     items = policy_sources.collect_gov24()
     policy_store.set_workspace_setting("last_full_collection_at", policy_store.now_iso())
     stats = policy_sources.LAST_COLLECTION_STATS
@@ -25,6 +39,7 @@ def collect() -> list[dict]:
 
 
 def recommended_candidates(limit: int = 20) -> list[dict]:
+    recover_interrupted_candidates()
     count = max(1, min(limit, 200))
     prune_expired_candidates()
     pool = policy_store.list_candidates(status="ready", limit=200)
@@ -53,12 +68,29 @@ def prune_expired_candidates() -> int:
     return expired
 
 
-def generate_recommended(count: int = 1, image_provider: str = "openai") -> list[dict]:
+def generate_recommended(
+    count: int = 1, image_provider: str = "openai",
+    coupang_asset_provider: Callable[[dict], list[str]] | None = None,
+) -> list[dict]:
     candidates = recommended_candidates(count)
     if not candidates:
         raise RuntimeError("생성 가능한 추천 정책이 없습니다. collect를 먼저 실행하세요.")
     print("자동 선택: " + ", ".join(f"{item['id']}({item['title']})" for item in candidates))
-    return [generate_candidate(item["id"], image_provider) for item in candidates]
+    packages, failures = [], []
+    for index, item in enumerate(candidates, start=1):
+        try:
+            assets = coupang_asset_provider(item) if coupang_asset_provider else []
+            print(f"추천 일괄 생성 {index}/{len(candidates)} · {item['title']}", flush=True)
+            packages.append(
+                generate_candidate(item["id"], image_provider, coupang_assets=assets)
+            )
+        except Exception as exc:
+            failures.append(f"{item['id']} {item['title']}: {exc}")
+            print(f"[오류] 추천 일괄 생성 계속 진행 · {failures[-1]}", flush=True)
+    print(f"추천 일괄 생성 완료: 성공 {len(packages)}건 / 실패 {len(failures)}건", flush=True)
+    if failures and not packages:
+        raise RuntimeError(f"추천 후보 {len(failures)}건을 모두 생성하지 못했습니다.")
+    return packages
 
 
 def import_url(url: str, pasted_text: str = "") -> dict:
@@ -74,12 +106,15 @@ def generate_candidate(
     coupang_product_urls: list[str] | tuple[str, ...] | None = None,
     coupang_assets: list[str] | tuple[str, ...] | None = None,
 ) -> dict:
+    recover_interrupted_candidates()
     asset_sources = [*(coupang_assets or []), *(coupang_product_urls or [])]
     affiliate.parse_coupang_assets(asset_sources)
     print(f"[진행 1/6] 공식 정책 최신 정보 확인 · 후보 {candidate_id}", flush=True)
     candidate = policy_store.get_candidate(candidate_id)
     if not candidate:
         raise KeyError(f"정책 후보를 찾을 수 없습니다: {candidate_id}")
+    if candidate.get("status") == "generating":
+        raise RuntimeError("이 정책은 다른 글 생성 작업에서 현재 사용 중입니다.")
     try:
         candidate = policy_sources.refresh_candidate(candidate_id)
     except Exception as exc:
@@ -106,6 +141,11 @@ def generate_candidate(
         )
     except Exception as exc:
         policy_store.set_candidate_status(candidate_id, "failed", str(exc))
+        raise
+    except (KeyboardInterrupt, SystemExit):
+        policy_store.set_candidate_status(
+            candidate_id, "ready", "글 생성이 중단되어 다시 선택 가능 상태로 복구됨"
+        )
         raise
     print(f"티스토리 패키지 생성 완료: {package['id']} → {package['path']}")
     return package

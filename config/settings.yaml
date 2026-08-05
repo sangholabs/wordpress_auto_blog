@@ -24,7 +24,7 @@ publish:
 llm:
   anthropic_model: "claude-sonnet-4-6"   # LLM_PROVIDER=anthropic 일 때
   gemini_model: "gemini-1.5-flash"       # LLM_PROVIDER=gemini 일 때
-  max_tokens: 4096
+  max_tokens: 8192
 
 keyword_research:
   request_delay_sec: 0.5   # 요청 간 대기(과도한 호출 방지)
@@ -72,6 +72,7 @@ policy_workspace:
   image_model: "gpt-image-2"
   image_quality: medium
   images_enabled: true     # 티스토리 대표 1장·본문 2장 생성. WordPress 대표이미지 설정과 독립
+  supabase_upload_enabled: true  # 생성 이미지를 Supabase 공개 버킷에 올려 게시 HTML에 URL 삽입
   coupang_enabled: true
   coupang_layout: per_h2
   coupang_max_blocks: 2

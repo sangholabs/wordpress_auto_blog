@@ -45,8 +45,9 @@ def _valid_draft():
 def test_generation_repairs_invalid_json_once(monkeypatch):
     calls = []
     valid = json.dumps(_valid_draft(), ensure_ascii=False)
-    def fake_generate(prompt, system):
+    def fake_generate(prompt, system, **kwargs):
         calls.append(prompt)
+        assert kwargs["json_schema"] == policy_prompts.POLICY_DRAFT_SCHEMA
         return "not-json" if len(calls) == 1 else valid
     monkeypatch.setattr(policy_prompts, "generate", fake_generate)
     draft = policy_prompts.generate_policy_draft(_candidate())

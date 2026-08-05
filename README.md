@@ -99,6 +99,8 @@ python -m src.policy_cli packages
 python -m src.policy_cli coupang-assets 글ID --url "https://link.coupang.com/a/..."
 # HTML/iframe/script 소재는 UTF-8 파일로 저장한 뒤 적용
 python -m src.policy_cli coupang-assets 글ID --file coupang_banner.html
+# 기존 패키지 이미지 3장을 Supabase에 올리고 게시 HTML에 URL 삽입
+python -m src.policy_cli upload-images 글ID
 ```
 
 `collect`는 보조금24 여러 페이지와 공식 지원조건을 검사해 농림·수산업, 기업·특수직역 전용 정책을 숨기고 30~50대 주부·직장인에게 맞는 생활 혜택만 자동 추천한다. `list`에는 추천 상위 후보만 표시되며, 전체 저장 상태가 필요할 때만 `list --all`을 사용한다. `generate-recommended`는 수동 일괄 생성이고, `auto-run`은 하루 한도와 중복 실행을 확인한 뒤 점수·카테고리 분산 순서로 생성한다. 후보가 부족하거나 마지막 전체 수집 후 24시간이 지나면 다시 수집하며 선택 정책은 생성 직전 재검증한다.
@@ -108,6 +110,8 @@ python -m src.policy_cli coupang-assets 글ID --file coupang_banner.html
 `05_출처_검증.md`, `07_SEO_게시정보.txt`, `seo/게시전_검사.json`을 확인한 후 먼저 비공개 저장으로 티스토리 스킨과 광고 표시를 점검한다. OpenAI 이미지 일부가 실패하면 `needs_image_retry`로 보관하며 누락된 이미지만 재시도할 수 있다. 게시 URL을 기록하면 `seo/게시후_검사.json`도 생성한다. 이 작업실은 티스토리에 자동 로그인하거나 자동 게시하지 않는다. 애드센스용 소개·개인정보처리방침·문의 페이지는 `output/tistory/pages/`에 별도 수동 게시 패키지로 만든다.
 
 티스토리 글별 쿠팡 소재는 상품 URL, 쿠팡이 발급한 링크+이미지 HTML, iframe, `PartnersCoupang.G` 스크립트를 지원한다. 터미널에서는 소재 코드를 클립보드에 복사한 뒤 수동 글 생성 또는 `20. ...광고 소재 설정`에서 **클립보드 코드**를 선택한다. 웹 작업실은 소재 3개를 각각 별도 칸에 붙여넣는다. 크기는 manifest에 기록되고 모바일 폭을 넘지 않도록 감싸지만, 티스토리가 iframe/script를 제거할 수 있으므로 비공개 게시 후 반드시 확인한다.
+
+`SUPABASE_URL`, `SUPABASE_SECRET_KEY`(레거시는 `SUPABASE_SERVICE_ROLE_KEY`), `SUPABASE_STORAGE_BUCKET`을 설정하고 해당 Storage 버킷을 공개로 만들면, 새 패키지의 대표·본문 이미지 3장을 자동 업로드한다. `02_본문_HTML블록용.txt`, 게시용 HTML과 세 구간 파일에는 Supabase 공개 URL의 `<img>`가 포함된다. 기존 패키지는 `upload-images 글ID` 또는 작업실 18번 이미지 메뉴에서 변환한다. secret/service_role 키는 로컬 `.env`에만 보관하고 Git이나 브라우저 코드에 넣지 않는다.
 
 ## 다른 PC에서 이어받기
 

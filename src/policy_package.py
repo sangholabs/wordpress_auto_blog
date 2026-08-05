@@ -12,13 +12,14 @@ from pathlib import Path
 import markdown as md
 from bs4 import BeautifulSoup
 
-from . import affiliate, policy_store
+from . import affiliate, policy_storage, policy_store
 from .config import ROOT, get_settings
 from .policy_images import failed_asset, generate_image, safe_name
 from .policy_prompts import unsupported_fact_warnings
 
 OUTPUT_ROOT = ROOT / "output" / "tistory"
 ZIP_ROOT = OUTPUT_ROOT / "zips"
+PACKAGE_SCHEMA_VERSION = 7
 ARTICLE_STYLE = (
     "max-width:720px;margin:0 auto;padding:8px 4px;font-family:-apple-system,"
     "BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:#222;"
@@ -95,20 +96,66 @@ def _image_placeholders(body: str, manifest: dict) -> str:
     soup = BeautifulSoup(body, "html.parser")
     headings = soup.find_all("h2")
     current = manifest.get("current_images", {})
+    remote = manifest.get("supabase", {}).get("images", {})
+    featured_brief = next((b for b in manifest["draft"]["image_briefs"] if b["slot"] == "featured"), {})
+    featured_public = remote.get("featured", {})
+    if (
+        featured_public.get("public_url")
+        and featured_public.get("local_path") == current.get("featured")
+    ):
+        figure = soup.new_tag("figure")
+        figure["data-policy-image-slot"] = "featured"
+        figure["data-policy-image-source"] = "supabase"
+        figure["style"] = "margin:0 0 28px;text-align:center"
+        image = soup.new_tag("img")
+        image["src"] = featured_public["public_url"]
+        image["alt"] = featured_brief.get("alt", "")
+        image["width"] = "1200"
+        image["height"] = "640"
+        image["loading"] = "eager"
+        image["fetchpriority"] = "high"
+        image["style"] = "display:block;width:100%;height:auto;border-radius:10px"
+        figure.append(image)
+        if featured_brief.get("caption"):
+            caption = soup.new_tag("figcaption")
+            caption["style"] = "font-size:13px;color:#667;margin-top:8px"
+            caption.string = featured_brief["caption"]
+            figure.append(caption)
+        soup.insert(0, figure)
     for offset, slot in enumerate(("body1", "body2"), start=1):
         brief = next((b for b in manifest["draft"]["image_briefs"] if b["slot"] == slot), {})
         section = brief.get("section", "")
         heading = next((h for h in headings if section and (section in h.get_text() or h.get_text() in section)), None)
         if heading is None and headings:
             heading = headings[min(offset, len(headings) - 1)]
-        marker = soup.new_tag("div")
-        marker["data-policy-image-slot"] = slot
-        marker["style"] = (
-            "margin:22px 0;padding:18px;border:2px dashed #8aa4d6;border-radius:10px;"
-            "background:#f7f9fd;text-align:center;color:#40577f;font-size:14px"
-        )
-        filename = Path(current.get(slot, "")).name or f"{offset + 1:02d}_본문_이미지없음.jpg"
-        marker.string = f"이미지 업로드 위치: {filename} · 대체텍스트: {brief.get('alt', '')}"
+        remote_asset = remote.get(slot, {})
+        if remote_asset.get("public_url") and remote_asset.get("local_path") == current.get(slot):
+            marker = soup.new_tag("figure")
+            marker["data-policy-image-slot"] = slot
+            marker["data-policy-image-source"] = "supabase"
+            marker["style"] = "margin:24px 0;text-align:center"
+            image = soup.new_tag("img")
+            image["src"] = remote_asset["public_url"]
+            image["alt"] = brief.get("alt", "")
+            image["width"] = "1200"
+            image["height"] = "800"
+            image["loading"] = "lazy"
+            image["style"] = "display:block;width:100%;height:auto;border-radius:10px"
+            marker.append(image)
+            if brief.get("caption"):
+                caption = soup.new_tag("figcaption")
+                caption["style"] = "font-size:13px;color:#667;margin-top:8px"
+                caption.string = brief["caption"]
+                marker.append(caption)
+        else:
+            marker = soup.new_tag("div")
+            marker["data-policy-image-slot"] = slot
+            marker["style"] = (
+                "margin:22px 0;padding:18px;border:2px dashed #8aa4d6;border-radius:10px;"
+                "background:#f7f9fd;text-align:center;color:#40577f;font-size:14px"
+            )
+            filename = Path(current.get(slot, "")).name or f"{offset + 1:02d}_본문_이미지없음.jpg"
+            marker.string = f"이미지 업로드 위치: {filename} · 대체텍스트: {brief.get('alt', '')}"
         if heading:
             heading.insert_after(marker)
         else:
@@ -205,8 +252,12 @@ def _place_affiliates(body: str, blocks: list[str], layout: str) -> str:
         group = '<div data-policy-affiliate-group="true">' + "".join(blocks) + "</div>"
         return _insert_after_sections(body, [group])
     if layout == "grouped_h2":
-        group = '<div data-policy-affiliate-group="true">' + "".join(blocks) + "</div>"
-        return _insert_after_sections(body, [group, group])
+        grouped_count = max(1, len(blocks) - 1)
+        group = (
+            '<div data-policy-affiliate-group="true">'
+            + "".join(blocks[:grouped_count]) + "</div>"
+        )
+        return _insert_after_sections(body, [group, *blocks[grouped_count:]])
     return _insert_after_sections(body, blocks)
 
 
@@ -266,14 +317,21 @@ def _split_segments(full_html: str) -> list[str]:
     else:
         content = full_html
         segment_style = ARTICLE_STYLE
-    pattern = r'<div data-policy-image-slot="body[12]"[^>]*>.*?</div>'
+    pattern = (
+        r'(<figure data-policy-image-slot="body[12]"[^>]*>.*?</figure>|'
+        r'<div data-policy-image-slot="body[12]"[^>]*>.*?</div>)'
+    )
     parts = re.split(pattern, content, flags=re.DOTALL)
-    while len(parts) < 3:
-        parts.append("")
+    if len(parts) >= 5:
+        first_asset = parts[1] if parts[1].startswith("<figure") else ""
+        second_asset = parts[3] if parts[3].startswith("<figure") else ""
+        segments = [parts[0] + first_asset, parts[2] + second_asset, "".join(parts[4:])]
+    else:
+        segments = [content, "", ""]
     escaped_style = html.escape(segment_style, quote=True)
     return [
         f'<section data-policy-segment="{index}" style="{escaped_style}">{part.strip()}</section>'
-        for index, part in enumerate(parts[:3], start=1)
+        for index, part in enumerate(segments, start=1)
     ]
 
 
@@ -339,6 +397,7 @@ H2 개수: {len(seo['heading_outline'])}
 def render_package_files(package_dir: Path, manifest: dict) -> None:
     from . import policy_seo
 
+    storage_warnings = policy_storage.sync_manifest_images(package_dir, manifest)
     body = _portable_html(manifest["draft"]["markdown"])
     body = _image_placeholders(body, manifest)
     blocks, ad_warnings, mode = _affiliate_blocks(
@@ -350,10 +409,14 @@ def render_package_files(package_dir: Path, manifest: dict) -> None:
     disclosure = _disclosure() if blocks and mode != "disabled" else ""
     full = f'<article style="{ARTICLE_STYLE}">' + disclosure + body + _source_footer(manifest) + "</article>"
     segments = _split_segments(full)
-    manifest["schema_version"] = max(6, int(manifest.get("schema_version", 1)))
+    manifest["schema_version"] = max(
+        PACKAGE_SCHEMA_VERSION, int(manifest.get("schema_version", 1))
+    )
     manifest["tags"] = list(manifest["draft"].get("tags", []))
     warnings = unsupported_fact_warnings(manifest["draft"]["markdown"], {
-        "facts": manifest["source"].get("facts", {})
+        "facts": manifest["source"].get("facts", {}),
+        "source_updated_at": manifest["source"].get("source_updated_at", ""),
+        "checked_at": manifest["source"].get("checked_at", ""),
     })
     core_labels = {
         "eligibility": "지원 대상", "benefit": "지원 내용", "application_period": "신청기간",
@@ -365,6 +428,7 @@ def render_package_files(package_dir: Path, manifest: dict) -> None:
         for key, label in core_labels.items() if not source_facts.get(key)
     )
     warnings.extend(ad_warnings)
+    warnings.extend(storage_warnings)
     current = manifest.get("current_images", {})
     warnings.extend(
         item["error"] for item in manifest.get("images", [])
@@ -421,25 +485,35 @@ def render_package_files(package_dir: Path, manifest: dict) -> None:
         path = manifest.get("current_images", {}).get(slot, "생성 실패 - 작업실에서 재생성")
         image_lines.append(f"- {slot}: {path}")
     images_enabled = manifest.get("generation", {}).get("images_enabled", True)
+    remote_images = manifest.get("supabase", {}).get("images", {})
+    remote_ready = images_enabled and all(
+        remote_images.get(slot, {}).get("public_url")
+        and remote_images.get(slot, {}).get("local_path") == manifest.get("current_images", {}).get(slot)
+        for slot in ("featured", "body1", "body2")
+    )
     manual_assets = manifest.get("coupang_assets") or manifest.get("coupang_product_links", [])
     asset_lines = [
         f"- {index}: {affiliate.coupang_asset_label(asset)}"
         for index, asset in enumerate(manual_assets, start=1) if isinstance(asset, dict)
     ] or ["- 직접 입력 소재 없음(API·공용 배너·검색 링크 설정에 따라 자동 처리)"]
-    image_steps = """2. 대표 이미지를 글 상단에 업로드하고 티스토리 대표 이미지로 지정합니다.
+    image_steps = """2. 02_본문_HTML블록용.txt 전체를 티스토리 HTML 블록 또는 HTML 모드에 붙여넣습니다.
+3. 대표·본문 이미지 3장은 Supabase 공개 URL의 <img>로 본문에 포함되어 있습니다.
+4. 티스토리가 외부 이미지를 대표 이미지로 자동 지정하지 않으면 images/01_대표 파일만 직접 업로드해 대표로 지정합니다.
+5. 비공개 저장 후 Supabase 이미지 3장이 모두 표시되는지 확인합니다.""" if remote_ready else """2. 대표 이미지를 글 상단에 업로드하고 티스토리 대표 이미지로 지정합니다.
 3. 기본모드에서 'HTML 블록'을 추가하고 segments/01_본문_시작_HTML블록용.txt 내용을 붙여넣습니다.
 4. images/02_본문 파일을 업로드하고 대체텍스트·캡션을 manifest대로 입력합니다.
 5. 다음 'HTML 블록'에 segments/02_본문_중간_HTML블록용.txt를 붙여넣은 뒤 images/03_본문 파일을 업로드합니다.
 6. 마지막 'HTML 블록'에 segments/03_본문_마무리_HTML블록용.txt를 붙여넣습니다.""" if images_enabled else """2. 기본모드에서 'HTML 블록'을 추가합니다.
 3. 02_본문_HTML블록용.txt 전체를 붙여넣습니다. 이미지 생성이 꺼져 있어 이미지 업로드 단계는 없습니다."""
+    followup_step = 6 if remote_ready else 7 if images_enabled else 4
     guide = f"""티스토리 수동 게시 순서
 
 1. 01_제목.txt 내용을 티스토리 제목에 붙여넣습니다.
 {image_steps}
-7. 04_태그.txt의 태그를 입력하고 05_출처_검증.md의 경고를 확인합니다.
-8. 07_SEO_게시정보.txt에서 제목·설명·소제목·ALT 자동 점검과 게시 후 확인사항을 확인합니다.
-9. 먼저 비공개로 저장해 모바일 표 가로 스크롤·문단·이미지·쿠팡 링크·고지문구를 확인한 뒤 공개합니다.
-10. 작업실에서 게시 완료를 표시하고 티스토리 URL을 기록합니다.
+{followup_step}. 04_태그.txt의 태그를 입력하고 05_출처_검증.md의 경고를 확인합니다.
+{followup_step + 1}. 07_SEO_게시정보.txt에서 제목·설명·소제목·ALT 자동 점검과 게시 후 확인사항을 확인합니다.
+{followup_step + 2}. 먼저 비공개로 저장해 모바일 표 가로 스크롤·문단·이미지·쿠팡 링크·고지문구를 확인한 뒤 공개합니다.
+{followup_step + 3}. 작업실에서 게시 완료를 표시하고 티스토리 URL을 기록합니다.
 
 [중요]
 - 티스토리 '코드블록'은 HTML 코드를 글에 그대로 보여주는 기능이므로 본문 작성에는 사용하지 않습니다.
@@ -483,7 +557,7 @@ def create_package(
     policy_cfg = get_settings().get("policy_workspace", {})
     images_enabled = bool(policy_cfg.get("images_enabled", True))
     manifest = {
-        "schema_version": 6,
+        "schema_version": 7,
         "id": package_id,
         "candidate_id": candidate["id"],
         "title": draft["title"],
@@ -605,6 +679,68 @@ def rebuild_package(package_id: str) -> dict:
     policy_store.save_package(package)
     policy_store.save_seo_audit(package_id, "local", manifest["seo"])
     return package
+
+
+def outdated_packages(limit: int = 500) -> list[dict]:
+    """현재 렌더러보다 오래된 manifest를 사용하는 패키지를 반환한다."""
+    outdated: list[dict] = []
+    for package in policy_store.list_packages(limit=limit):
+        manifest_path = Path(package["path"]) / "06_manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+            version = int(manifest.get("schema_version", 1))
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            continue
+        if version < PACKAGE_SCHEMA_VERSION:
+            item = dict(package)
+            item["schema_version"] = version
+            outdated.append(item)
+    return outdated
+
+
+def rebuild_outdated_packages() -> dict:
+    """구형 패키지를 외부 LLM·이미지 생성 없이 최신 형식으로 일괄 재빌드한다."""
+    targets = outdated_packages()
+    rebuilt, errors = [], []
+    for index, package in enumerate(targets, start=1):
+        print(
+            f"[재빌드 {index}/{len(targets)}] {package['title']} "
+            f"(schema {package['schema_version']} → {PACKAGE_SCHEMA_VERSION})",
+            flush=True,
+        )
+        try:
+            rebuilt.append(rebuild_package(package["id"]))
+        except Exception as exc:
+            errors.append(f"{package['id']}: {exc}")
+            print(f"[오류] {errors[-1]}", flush=True)
+    return {"total": len(targets), "rebuilt": len(rebuilt), "errors": errors}
+
+
+def upload_package_images(package_id: str) -> dict:
+    """기존 패키지의 현재 이미지 3장을 Supabase에 올리고 게시 HTML을 다시 만든다."""
+    package = policy_store.get_package(package_id)
+    if not package:
+        raise KeyError(f"패키지를 찾을 수 없습니다: {package_id}")
+    package_dir = Path(package["path"])
+    manifest = load_manifest(package_dir)
+    render_package_files(package_dir, manifest)
+    remote = manifest.get("supabase", {}).get("images", {})
+    missing = [
+        slot for slot in ("featured", "body1", "body2")
+        if not remote.get(slot, {}).get("public_url")
+        or remote.get(slot, {}).get("local_path") != manifest.get("current_images", {}).get(slot)
+    ]
+    package["status"] = manifest["status"]
+    package["updated_at"] = manifest["updated_at"]
+    policy_store.save_package(package)
+    policy_store.save_seo_audit(package_id, "local", manifest["seo"])
+    if missing:
+        error = manifest.get("supabase", {}).get("last_error", "")
+        raise RuntimeError(
+            "Supabase에 올리지 못한 이미지: " + ", ".join(missing)
+            + (f" · {error}" if error else "")
+        )
+    return manifest
 
 
 def regenerate_image(package_id: str, slot: str, provider: str) -> dict:

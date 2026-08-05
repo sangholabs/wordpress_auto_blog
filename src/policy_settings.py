@@ -12,10 +12,12 @@ DEFAULTS = {
     "schedule_time": "09:30",
     "packages_per_day": 1,
     "candidate_refresh_hours": 24,
+    "generation_stale_minutes": 60,
     "image_provider": "openai",
     "image_model": "gpt-image-2",
     "image_quality": "medium",
     "images_enabled": True,
+    "supabase_upload_enabled": True,
     "coupang_enabled": True,
     "coupang_layout": "per_h2",
     "coupang_max_blocks": 2,
@@ -76,6 +78,7 @@ def normalize(key: str, value: object) -> object:
         number = int(value)
         ranges = {
             "packages_per_day": (1, 5), "candidate_refresh_hours": (1, 168),
+            "generation_stale_minutes": (15, 720),
             "coupang_max_blocks": (1, 3), "seo_title_min": (10, 60),
             "seo_title_max": (20, 80), "seo_description_min": (30, 180),
             "seo_description_max": (60, 250), "seo_min_body_chars": (800, 10000),

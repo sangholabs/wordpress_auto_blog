@@ -65,6 +65,29 @@ def test_published_seo_audit_checks_meta_and_placeholders():
     assert "게시 본문에 이미지 업로드 자리 표시가 남아 있습니다." in failed["issues"]
 
 
+def test_published_supabase_figure_is_not_treated_as_placeholder():
+    page = """<!doctype html><html><head><title>정책 제목</title>
+    <meta name="description" content="설명"><meta name="viewport" content="width=device-width">
+    <meta property="og:title" content="정책"><meta property="og:description" content="설명"><meta property="og:image" content="https://x.test/a.jpg">
+    <link rel="canonical" href="https://blog.tistory.com/1"></head><body><h1>정책 제목</h1>
+    <figure data-policy-image-slot="body1" data-policy-image-source="supabase"><img src="https://x.test/a.jpg" alt="본문"></figure>
+    </body></html>"""
+    result = policy_seo.audit_published_html(page, "https://blog.tistory.com/1", 200)
+    check = next(item for item in result["checks"] if item["code"] == "image_placeholders")
+    assert check["passed"] is True
+
+
+def test_local_affiliate_disclosure_uses_dom_order_not_serialized_html():
+    manifest = _manifest()
+    body = policy_package._portable_html(manifest["draft"]["markdown"])
+    disclosure = '<div>이 포스팅은 쿠팡 파트너스 활동의 일환으로 수수료를 받습니다.</div>'
+    ad = '<a href="https://link.coupang.com/a/test" rel="nofollow sponsored">상품</a>'
+    full = f'<article>{disclosure}{body}{ad}{policy_package._source_footer(manifest)}</article>'
+    result = policy_seo.audit_local(manifest, full)
+    check = next(item for item in result["checks"] if item["code"] == "affiliate_disclosure")
+    assert check["passed"] is True
+
+
 def test_published_url_blocks_private_network(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", lambda *args: [(socket.AF_INET, 0, 0, "", ("127.0.0.1", 443))])
     with pytest.raises(ValueError, match="내부·로컬"):
