@@ -2,7 +2,7 @@
 import json
 import re
 
-from .config import DATA_DIR, ROOT
+from .config import DATA_DIR, ROOT, env
 from .llm_provider import generate
 from .prompts import POST_SYSTEM, build_post_prompt
 
@@ -28,7 +28,8 @@ def _clean_markdown(text: str) -> str:
 
 def generate_post(topic: dict) -> dict:
     prompt = build_post_prompt(topic)
-    print(f"'{topic['keyword']}' 글 생성 중... (Claude 응답 대기, 1~3분 소요)", flush=True)
+    provider = env("LLM_PROVIDER", "claude_code")
+    print(f"'{topic['keyword']}' 글 생성 중... ({provider} 응답 대기)", flush=True)
     markdown = _clean_markdown(generate(prompt, system=POST_SYSTEM))
 
     title_match = re.search(r"^#\s+(.+)$", markdown, re.MULTILINE)

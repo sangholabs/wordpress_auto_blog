@@ -1,118 +1,176 @@
-# 수익형 블로그 자동화 파이프라인
+# WordPress 자동발행·티스토리 정책 콘텐츠 작업실
 
-WordPress 블로그에 쿠팡 파트너스 + 구글 애드센스 수익형 콘텐츠를 자동으로 기획·생성·게시하는 독립 프로젝트다. clone 후 `.env`만 채우면 다른 PC에서도 바로 동작하도록 설계한다.
+하나의 터미널 제어판에서 서로 독립된 두 가지 블로그 작업을 운영하는 Python 프로젝트다.
 
-기존 WordPress 자동발행과 별도로 **국가정책·티스토리 작업실**을 제공한다. 30~50대 주부·직장인이 놓치기 쉬운 정부 혜택을 공식 출처에서 수집하고, 검토한 정책만 글·대표 이미지·본문 이미지·출처 검증 파일로 묶어 티스토리에 수동 게시할 수 있다.
+| 구분 | WordPress | 티스토리 정책 작업실 |
+|---|---|---|
+| 주제 | 생활·리빙·가전 | 30~50대 주부·직장인을 위한 정부 혜택 |
+| 결과 | WordPress REST API 자동 게시 | 제목·본문·대표/본문 이미지·SEO·출처 패키지 보관 |
+| 자동화 | 매일 실제 게시 | 매일 패키지만 생성, 티스토리 게시자는 수동 게시 |
+| 설정 | `publish`, `content`, `coupang` | `policy_workspace` |
+| 예약 | `src.schedule_task` | `src.policy_schedule_task` |
 
-## 핵심 원칙
+메인 메뉴 1~16은 WordPress 전용이고 17번으로 들어간 뒤의 1~24는 티스토리 전용이다. API 키와 쿠팡 공용 배너는 공유하지만 하루 편수·시각·광고·이미지 설정은 섞이지 않는다.
 
-- 반복적이고 일관된 작업(키워드 수집, 포맷팅, 게시)은 순수 Python/JS로 처리해 **토큰을 쓰지 않는다.**
-- LLM 토큰은 **글 생성 단계에서만** 사용하며, provider 추상화로 Gemini/Claude를 교체할 수 있다.
-- 비밀정보·수집데이터·임시파일은 모두 `.gitignore` 처리해 GitHub에 개인정보가 딸려가지 않는다.
+## 빠른 시작
 
-## 파이프라인 (7단계)
+자세한 설치는 [SETUP.md](SETUP.md)를 따른다. Python 3.12가 공식 기준이다.
 
-1. 카테고리 설계 — `config/categories.yaml` (반자동, 1회).
-2. 키워드/주제 발굴 — 검색 자동완성·연관검색어 스크래핑 (cron, 0토큰).
-3. 주제 큐 선별 — 검색량·경쟁도 스코어링, 중복 제거 (0토큰).
-4. 글 생성 — SEO 구조 템플릿 기반 LLM 호출 (토큰 사용).
-5. 가독성 포맷팅 — 목차·이미지·쿠팡 링크·고지문구 자동 삽입 (0토큰).
-6. WordPress 게시 — REST API 예약발행 (0토큰).
-7. 모니터링 — 게시 결과·비용 리포트.
-
-## 폴더 구조 (예정)
-
-```
-blog/
-├─ config/        # 카테고리·운영 설정 (yaml)
-├─ src/           # 파이프라인 단계별 모듈
-├─ data/          # 수집·생성 데이터 (gitignore)
-├─ logs/          # 실행 로그 (gitignore)
-├─ .env           # 비밀정보 (gitignore)
-└─ requirements.txt
+```zsh
+# macOS
+python3.12 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
+cp .env.example .env
+./control.sh
 ```
 
-## 설치·실행 (Windows / macOS)
+```powershell
+# Windows PowerShell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+copy .env.example .env
+.\제어판.bat
+```
 
-`SETUP.md` 참고. 전역 Python 3.12/Node/Git은 PC에 설치하고, Python 의존성은 프로젝트 `.venv`에 격리한다.
+설치·설정 진단은 게시나 유료 API 호출 없이 실행된다.
 
-- Windows 터미널 제어판: `제어판.bat`
-- macOS 터미널 제어판: `./control.sh`
-- Windows 예약 실행: 작업 스케줄러(`schtasks`)
-- macOS 예약 실행: 사용자 LaunchAgent(`launchd`)
-- 공통 직접 실행: 가상환경 Python으로 `python -m src.pipeline`
+```sh
+python -m src.doctor
+python -m src.doctor --live  # 보조금24·Supabase·WordPress 읽기 전용 확인
+```
 
-## 진행 상황
+## 실제 저장 구조
 
-`checklist.md`(할 일)와 `context-notes.md`(결정 기록)에서 관리한다.
+```text
+wordpress_auto_blog/
+├─ config/
+│  ├─ settings.yaml               # GitHub에 보관하는 공식 기본값
+│  ├─ settings.local.yaml         # 이 PC의 운영값, 자동 생성·gitignore
+│  └─ categories.yaml
+├─ src/                           # WordPress·티스토리 공용 및 전용 모듈
+├─ tests/                         # 외부 호출을 모킹하는 회귀 테스트
+├─ data/                          # 큐·발행 이력·SQLite, gitignore
+├─ output/                        # 초안·미리보기·티스토리 패키지, gitignore
+├─ logs/                          # 예약·대시보드 로그, gitignore
+├─ control.sh / run.sh            # macOS 진입점
+├─ 제어판.bat / run.bat           # WordPress Windows 진입점
+└─ policy_run.bat                 # 티스토리 Windows 예약 진입점
+```
 
-## 보안 / 배포
+메뉴·대시보드에서 바꾼 값은 `config/settings.local.yaml`에만 기록된다. `config/settings.yaml`을 수정하지 않으므로 GitHub에 개인 운영 시각과 편수가 따라가지 않는다.
 
-이 저장소에는 어떤 개인정보·시크릿도 포함되지 않는다. 다음 항목은 모두 `.gitignore`로 제외된다.
+## WordPress
 
-- `.env` (WordPress·API 키 등) — `.env.example`을 복사해 직접 채운다.
-- `config/coupang_widget.html` (쿠팡 추적코드 포함) — `config/coupang_widget.example.html` 참고해 직접 만든다.
-- `data/`, `logs/`, `output/`, 로그인 세션 프로필 — 실행 중 생성되는 로컬 데이터.
+```sh
+# 설정 하루 편수만큼 게시
+python -m src.pipeline
+# 키워드를 갱신한 뒤 설정 하루 편수만큼 게시
+python -m src.pipeline --refresh
+# 이번 실행만 정확히 1편 게시
+python -m src.pipeline --count 1
 
-clone 후에는 `SETUP.md`의 순서대로 본인 환경·자격증명만 채우면 바로 동작한다. 커밋 전에는 항상 `git status`로 위 파일들이 추적되지 않는지 확인한다.
+python -m src.schedule_task on
+python -m src.schedule_task status
+python -m src.schedule_task off
+```
 
-## 설정으로 바꿀 수 있는 것
+파이프라인은 실행 잠금과 원자적 발행 기록을 사용한다. 동일 slug 글이 이미 있거나 게시 응답이 끊긴 뒤 서버에서 같은 글이 확인되면 중복 POST를 하지 않는다. 한 주제 실패 시 다음 주제를 계속 시도한다.
 
-코드 수정 없이 `config/settings.yaml`(동작·디자인)과 `.env`(키·포트)에서 조정한다. 각 항목엔 주석이 달려 있다.
-
-- content — 최소 분량, 목차, 쿠팡 고지문구, 배너 레이아웃(per_h2/grouped/grouped_h2)·개수.
-- policy_workspace — 티스토리 전용 자동생성 시각·하루 편수, 보조금24 후보 갱신, SEO 기준, GPT Image, 쿠팡 광고·배너·로켓 설정. WordPress 설정과 독립된다.
-- publish — 발행 모드(publish/draft), 하루 편수, 자동발행 시각(schedule_time).
-- llm — anthropic/gemini 모델, max_tokens.
-- keyword_research — 요청 딜레이·타임아웃, 구글/네이버 소스 on/off.
-- topic_queue — 구매의도 키워드(intent_words), 롱테일 단어 수 범위.
-- design — 본문 폭·글자 크기·행간·주색상·가격색·폰트.
-- coupang — 로켓 전용, 글당 상품 수, 검색 수·타임아웃, 스크래퍼 포트, 배너 숏코드.
-- 니치·카테고리·주제 씨앗 — `config/categories.yaml`.
-- .env — LLM_PROVIDER·키, 쿠팡 키/태그, WordPress 자격증명, `DASHBOARD_PORT`, 예산·편수.
-- 정책 작업실은 `.env`의 `DATA_GO_KR_API_KEY`와 이미지 생성용 `OPENAI_API_KEY`를 추가로 사용한다.
+- Windows 예약 작업: `blog-auto`, 실행 파일 `run.bat`
+- macOS LaunchAgent: `com.wordpress-auto-blog.pipeline`
+- 로그: `logs/pipeline.log`
+- 중복 방지 기록: `data/published.json`
 
 ## 국가정책·티스토리 작업실
 
-`./control.sh` 또는 `제어판.bat`에서 `17. 정책·티스토리 작업실`을 선택한다. 웹에서는 기존 대시보드의 **국가정책·티스토리 작업실 열기** 또는 `/policy`를 사용한다.
+공식 보조금24 자료와 사용자가 추가한 공식 URL만 근거로 정책 후보를 만든다. 자동 추천은 생활 밀착도·구체적 혜택·최신성·카테고리 다양성을 함께 반영한다.
 
-터미널에서 직접 실행할 수도 있다.
-
-```bash
+```sh
 python -m src.policy_cli collect
 python -m src.policy_cli list
-python -m src.policy_cli import-url "https://공식정책주소"
 python -m src.policy_cli generate 후보ID
-python -m src.policy_cli generate-recommended --count 1
+python -m src.policy_cli generate-recommended --count 5
 python -m src.policy_cli auto-run
-python -m src.policy_schedule_task on
-python -m src.policy_schedule_task status
+python -m src.policy_cli packages
 python -m src.policy_cli seo-check 글ID
 python -m src.policy_cli retry-images 글ID all --provider openai
-python -m src.policy_cli settings show
-python -m src.policy_cli dashboard
-python -m src.policy_cli claude-login
-python -m src.policy_cli banner-setup
-python -m src.policy_cli required-pages
-python -m src.policy_cli packages
-# 기존 글에 쿠팡 상품 URL 적용
-python -m src.policy_cli coupang-assets 글ID --url "https://link.coupang.com/a/..."
-# HTML/iframe/script 소재는 UTF-8 파일로 저장한 뒤 적용
-python -m src.policy_cli coupang-assets 글ID --file coupang_banner.html
-# 기존 패키지 이미지 3장을 Supabase에 올리고 게시 HTML에 URL 삽입
-python -m src.policy_cli upload-images 글ID
+python -m src.policy_cli rebuild --all
+python -m src.policy_cli remove-featured-from-body --all
+
+python -m src.policy_schedule_task on
+python -m src.policy_schedule_task status
+python -m src.policy_schedule_task off
 ```
 
-`collect`는 보조금24 여러 페이지와 공식 지원조건을 검사해 농림·수산업, 기업·특수직역 전용 정책을 숨기고 30~50대 주부·직장인에게 맞는 생활 혜택만 자동 추천한다. `list`에는 추천 상위 후보만 표시되며, 전체 저장 상태가 필요할 때만 `list --all`을 사용한다. `generate-recommended`는 수동 일괄 생성이고, `auto-run`은 하루 한도와 중복 실행을 확인한 뒤 점수·카테고리 분산 순서로 생성한다. 후보가 부족하거나 마지막 전체 수집 후 24시간이 지나면 다시 수집하며 선택 정책은 생성 직전 재검증한다.
+자동 생성 기본값은 꺼짐, 09:30, 하루 1편이다. 현재 PC에서 바꾼 값은 로컬 설정에 보관된다.
 
-생성물은 `output/tistory/YYYY/MM/DD/정책ID_제목/`에 저장된다. `00_게시가이드.txt` 순서대로 제목과 세 구간의 HTML을 복사하고 대표·본문 이미지를 업로드한다. 한 번에 넣을 때는 `02_본문_HTML블록용.txt`, 이미지 사이로 나눠 넣을 때는 `segments/*_HTML블록용.txt`를 티스토리의 **HTML 블록** 또는 HTML 모드에 붙여넣는다. **코드블록은 HTML 소스를 화면에 그대로 표시하므로 본문 입력에 사용하지 않는다.** 사람이 여는 HTML·텍스트 산출물은 macOS 텍스트 편집기의 잘못된 한글 인코딩 추정을 막도록 UTF-8 BOM으로 저장된다.
+작업실 번호는 후보 준비 1~4, 수동 생성 5~6, 패키지 관리 7~13, 자동 생성 14~15, 이미지 16~18, SEO 19, 쿠팡 20~21, 기타 22~24로 묶여 있다. 패키지 관리와 이미지·SEO 기능은 수동/자동으로 만든 글에 공통 적용된다.
 
-`05_출처_검증.md`, `07_SEO_게시정보.txt`, `seo/게시전_검사.json`을 확인한 후 먼저 비공개 저장으로 티스토리 스킨과 광고 표시를 점검한다. OpenAI 이미지 일부가 실패하면 `needs_image_retry`로 보관하며 누락된 이미지만 재시도할 수 있다. 게시 URL을 기록하면 `seo/게시후_검사.json`도 생성한다. 이 작업실은 티스토리에 자동 로그인하거나 자동 게시하지 않는다. 애드센스용 소개·개인정보처리방침·문의 페이지는 `output/tistory/pages/`에 별도 수동 게시 패키지로 만든다.
+- Windows 예약 작업: `blog-policy-tistory-auto`, 실행 파일 `policy_run.bat`
+- macOS LaunchAgent: `com.wordpress-auto-blog.policy-tistory`
+- 로그: `logs/policy_pipeline.log`
+- 후보·패키지·게시 상태: `data/policy_workspace.sqlite3`
 
-티스토리 글별 쿠팡 소재는 상품 URL, 쿠팡이 발급한 링크+이미지 HTML, iframe, `PartnersCoupang.G` 스크립트를 지원한다. 터미널에서는 소재 코드를 클립보드에 복사한 뒤 수동 글 생성 또는 `20. ...광고 소재 설정`에서 **클립보드 코드**를 선택한다. 웹 작업실은 소재 3개를 각각 별도 칸에 붙여넣는다. 크기는 manifest에 기록되고 모바일 폭을 넘지 않도록 감싸지만, 티스토리가 iframe/script를 제거할 수 있으므로 비공개 게시 후 반드시 확인한다.
+### 티스토리 패키지
 
-`SUPABASE_URL`, `SUPABASE_SECRET_KEY`(레거시는 `SUPABASE_SERVICE_ROLE_KEY`), `SUPABASE_STORAGE_BUCKET`을 설정하고 해당 Storage 버킷을 공개로 만들면, 새 패키지의 대표·본문 이미지 3장을 자동 업로드한다. `02_본문_HTML블록용.txt`, 게시용 HTML과 세 구간 파일에는 Supabase 공개 URL의 `<img>`가 포함된다. 기존 패키지는 `upload-images 글ID` 또는 작업실 18번 이미지 메뉴에서 변환한다. secret/service_role 키는 로컬 `.env`에만 보관하고 Git이나 브라우저 코드에 넣지 않는다.
+```text
+output/tistory/YYYY/MM/DD/정책ID_제목/
+├─ 00_게시가이드.txt
+├─ 01_제목.txt
+├─ 02_본문_티스토리.html
+├─ 02_본문_HTML블록용.txt
+├─ 03_본문_일반텍스트.txt
+├─ 04_태그.txt
+├─ 05_출처_검증.md
+├─ 06_manifest.json
+├─ 07_SEO_게시정보.txt
+├─ images/
+├─ segments/
+└─ seo/
+```
 
-## 다른 PC에서 이어받기
+`02_본문_HTML블록용.txt`는 티스토리의 HTML 블록 또는 HTML 모드에 붙여넣는다. 코드블록은 HTML 소스를 화면에 보여주는 기능이므로 사용하지 않는다. 파일은 UTF-8 BOM으로 저장돼 macOS 텍스트 편집기에서도 한글이 깨지지 않는다.
 
-다른 PC에서 clone 해 이어서 작업하는 전체 절차는 `CONTINUE-ON-NEW-PC.md` 참고. 요약하면 clone → `SETUP.md` 설치 → 개인 시크릿 2개(`.env`, `config/coupang_widget.html`) 준비 → Windows는 `제어판.bat`, macOS는 `./control.sh` 실행이다. 두 운영체제 모두 같은 콘솔 메뉴에서 발행·자동발행·설정·push·애드센스 페이지를 관리한다.
+대표 이미지는 `images/01_대표_*.jpg`와 Supabase에 보관하지만 게시용 본문에는 넣지 않는다. 티스토리에서 별도로 업로드해 대표 이미지로 지정한다. 본문 이미지 2장만 `blog_image` 공개 버킷 URL로 본문 HTML에 들어간다.
+
+### 쿠팡 소재 입력
+
+상품 URL, 링크+이미지 HTML, iframe, 공식 `PartnersCoupang.G` script를 지원한다.
+
+- `1`: URL을 다음 입력창에 붙여넣기
+- `2`: 미리 복사한 전체 코드를 macOS `pbpaste`/Windows 클립보드에서 읽기
+- `3`: UTF-8 코드 파일 경로 입력
+- `0`: 해당 글의 입력 완료
+
+빈 줄은 완료로 처리하지 않는다. 수동 일괄 5편이면 각 글마다 설정 개수만큼 따로 묻는다. 예약 자동 생성은 사용자 입력을 받을 수 없어 쿠팡 API → 공용 배너 → 검색 링크 순으로 처리한다. 검색 링크는 파트너스 수익 추적이 보장되지 않는다는 경고를 남긴다.
+
+## LLM·이미지 엔진
+
+- `LLM_PROVIDER=anthropic`: `ANTHROPIC_API_KEY`, Claude API 사용. Claude Code 설치·로그인 불필요.
+- `LLM_PROVIDER=gemini`: `GEMINI_API_KEY`, `google-genai`와 `gemini-3.6-flash` 사용.
+- `LLM_PROVIDER=claude_code`: 로컬 `claude -p` 사용. Node.js·Claude Code 설치와 PC별 로그인이 필요.
+- 티스토리 기본 이미지: OpenAI API `gpt-image-2`. ChatGPT/Codex 구독과 별도 과금.
+- Pollinations: 사용자가 명시적으로 선택한 수동 대체 경로.
+
+LLM은 600초, OpenAI 이미지는 장당 360초로 제한하며 15초마다 경과시간을 표시한다. OpenAI 이미지 SDK 자동 재시도는 꺼져 있어 한 장이 장시간 중복 호출되지 않는다.
+
+## 보안·GitHub
+
+다음은 GitHub에 올라가지 않는다.
+
+- `.env`, `config/settings.local.yaml`, `config/coupang_widget.html`
+- `data/`, `output/`, `logs/`, `.venv/`
+
+메뉴 12의 GitHub push는 변경 목록 표시 → 전체 테스트 → 비밀값 검사 → 사용자 확인 → commit → 현재 브랜치 push 순서로 동작한다. PR이나 Codex GitHub 작업에 `gh`가 필요하면 `gh auth login` 후 `gh auth status`로 확인한다. 일반 `git push`는 Git 자격증명 관리자를 사용하며 `gh`에 의존하지 않는다.
+
+```sh
+python -m pytest -q
+python -m compileall -q src tests
+python -m src.secret_scan
+python -m src.secret_scan --history
+zsh -n control.sh run.sh
+```
+
+GitHub Actions는 Windows·macOS·Ubuntu의 Python 3.12에서 외부 API·실제 게시 없이 같은 회귀 검사를 수행한다.
+
+다른 PC 이전 절차는 [CONTINUE-ON-NEW-PC.md](CONTINUE-ON-NEW-PC.md), 현재 운영 인수인계는 [HANDOFF.md](HANDOFF.md)를 참고한다.

@@ -12,7 +12,7 @@ INPUTS = {
     "2": ["https://www.gov.kr/policy"],
     "3": [],
     "4": ["서울, 성남"],
-    "5": ["candidate-1", "1", ""],
+    "5": ["candidate-1", "1", "0"],
     "6": ["1", "1"],
     "7": [],
     "8": ["post-1"],
@@ -201,6 +201,28 @@ def test_coupang_prompt_accepts_single_line_html_directly(monkeypatch):
     assert policy_cli._prompt_coupang_assets() == [iframe]
 
 
+def test_coupang_prompt_blank_reprompts_instead_of_skipping_next_article(monkeypatch, capsys):
+    values = iter(["", "0"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(values))
+    monkeypatch.setattr(policy_cli.policy_settings, "get", lambda: {"coupang_max_blocks": 2})
+    assert policy_cli._prompt_coupang_assets() == []
+    assert "빈 입력은 완료가 아닙니다" in capsys.readouterr().out
+
+
+def test_coupang_prompt_shows_article_and_asset_progress(monkeypatch):
+    prompts = []
+    answers = iter(["0"])
+
+    def answer(prompt=""):
+        prompts.append(prompt)
+        return next(answers)
+
+    monkeypatch.setattr("builtins.input", answer)
+    monkeypatch.setattr(policy_cli.policy_settings, "get", lambda: {"coupang_max_blocks": 2})
+    assert policy_cli._prompt_coupang_assets(3, 5) == []
+    assert any("글 3/5 · 쿠팡 소재 1/2" in prompt for prompt in prompts)
+
+
 @pytest.mark.parametrize(("answer", "enabled"), [("1", True), ("2", False)])
 def test_image_settings_submenu_is_tistory_scoped(monkeypatch, answer, enabled):
     events = []
@@ -211,3 +233,17 @@ def test_image_settings_submenu_is_tistory_scoped(monkeypatch, answer, enabled):
     )
     policy_cli._image_settings_menu()
     assert events == [("images_enabled", enabled)]
+
+
+def test_image_settings_can_remove_featured_from_all_existing_bodies(monkeypatch):
+    events = []
+    answers = iter(["6", "all"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+    monkeypatch.setattr(policy_cli, "_print_packages", lambda: [])
+    monkeypatch.setattr(
+        policy_cli.policy_package,
+        "remove_featured_from_body",
+        lambda package_id=None: events.append(package_id) or {"total": 3, "rebuilt": 3, "errors": []},
+    )
+    policy_cli._image_settings_menu()
+    assert events == [None]

@@ -108,7 +108,13 @@ def index_page(message: str = "") -> str:
     storage = policy_storage.status()
     message_html = f'<div class="panel warn">{html.escape(message)}</div>' if message else ""
     category_options = "".join(f'<option value="{html.escape(cat)}">{html.escape(cat)}</option>' for cat in POLICY_CATEGORIES)
-    body = f"""{message_html}
+    coupang_mode = affiliate.monetization_mode()
+    coupang_warning = (
+        '<div class="warn">쿠팡 API·공용 배너가 없어 자동 글의 검색 링크는 '
+        '수익 추적이 보장되지 않습니다.</div>'
+        if settings["coupang_enabled"] and coupang_mode == "search-link" else ""
+    )
+    body = f"""{message_html}{coupang_warning}
 <section class="panel"><h2>티스토리 자동 생성·수익 설정</h2>
 <p><strong>자동생성 {schedule_status}</strong> · 매일 {html.escape(str(settings['schedule_time']))} · 하루 {settings['packages_per_day']}편 · 마지막 후보 수집 {html.escape(last_collect)}</p>
 <div class="row"><form method="post" action="/policy/auto-run"><button class="green">오늘 자동 생성 실행</button></form>
@@ -123,8 +129,8 @@ def index_page(message: str = "") -> str:
 <label>이미지 <select name="images_enabled"><option value="true" {'selected' if settings['images_enabled'] else ''}>대표+본문 생성</option><option value="false" {'selected' if not settings['images_enabled'] else ''}>생성 안 함</option></select></label>
 <label>Supabase <select name="supabase_upload_enabled"><option value="true" {'selected' if settings['supabase_upload_enabled'] else ''}>자동 업로드</option><option value="false" {'selected' if not settings['supabase_upload_enabled'] else ''}>사용 안 함</option></select></label>
 <button>티스토리 설정 저장</button></div></form>
-<div class="row"><form method="post" action="/policy/pages"><button class="gray">애드센스 필수 페이지 패키지 만들기</button></form><a class="btn orange" href="https://partners.coupang.com/" target="_blank" rel="noopener">쿠팡 배너 만들기</a></div>
-<p class="muted">WordPress 설정과 독립적으로 저장됩니다. API 키·Claude 인증·쿠팡 배너 파일만 공유합니다. 쿠팡 연결 방식: {html.escape(affiliate.monetization_mode())} · Supabase 환경변수: {'완료' if storage['configured'] else '설정 필요'} / {html.escape(storage['bucket'])}</p></section>
+<div class="row"><form method="post" action="/policy/pages"><button class="gray">애드센스 필수 페이지 패키지 만들기</button></form><form method="post" action="/policy/remove-featured-body" onsubmit="return confirm('모든 기존 패키지의 게시용 본문에서 대표 이미지를 제거하고 재빌드할까요?')"><button class="gray">기존 본문 대표 이미지 전체 제거</button></form><a class="btn orange" href="https://partners.coupang.com/" target="_blank" rel="noopener">쿠팡 배너 만들기</a></div>
+<p class="muted">WordPress 설정과 독립적으로 저장됩니다. API 키·Claude 인증·쿠팡 배너 파일만 공유합니다. 쿠팡 연결 방식: {html.escape(coupang_mode)} · Supabase 환경변수: {'완료' if storage['configured'] else '설정 필요'} / {html.escape(storage['bucket'])}</p></section>
 <div class="grid"><section class="panel"><h2>정책 수집</h2>
 <form method="post" action="/policy/collect"><button class="green">보조금24 후보 수집</button></form>
 <p class="muted">DATA_GO_KR_API_KEY가 필요합니다. 전국 정책과 아래 선택 지역만 수집합니다.</p>
@@ -209,7 +215,7 @@ def package_page(package_id: str) -> str:
 <section class="grid">{''.join(images)}</section><section class="panel"><h2>검증 경고</h2>{warnings}</section>
 <section class="panel"><h2>SEO 점검</h2><p><strong>{seo.get('score', 0)}점 · {html.escape(seo.get('status', 'review'))}</strong><br><strong>핵심 키워드:</strong> {html.escape(seo.get('primary_keyword', ''))}<br><strong>메타 설명:</strong> {html.escape(seo.get('meta_description', manifest.get('meta_description', '')))}</p>{seo_issues}<form method="post" action="/policy/seo"><input type="hidden" name="package_id" value="{package_id}"><button>게시 전 SEO 다시 검사</button></form><p class="muted">상세 내용은 07_SEO_게시정보.txt와 seo/ 폴더에 저장됩니다.</p></section>
 <section class="panel"><h2>쿠팡 파트너스 광고 소재</h2><p>{html.escape(asset_summary)}</p><form method="post" action="/policy/coupang-assets"><input type="hidden" name="package_id" value="{package_id}">{asset_fields}<button class="orange">광고 소재 저장·본문 재빌드</button></form><p class="muted">직접 입력한 소재가 API·공용 배너·검색 링크보다 우선합니다. 모두 지우고 저장하면 기본 연결 방식으로 돌아갑니다. iframe/script는 티스토리가 제거할 수 있으므로 비공개 미리보기에서 확인하세요.</p></section>
-<section class="panel"><h2>Supabase 게시 이미지</h2><form method="post" action="/policy/upload-images"><input type="hidden" name="package_id" value="{package_id}"><button class="green">이미지 업로드·게시 HTML 재빌드</button></form><p class="muted">현재 대표·본문 이미지 3장을 공개 버킷에 올리고 Supabase URL을 HTML의 img 태그에 삽입합니다.</p></section>
+<section class="panel"><h2>Supabase 게시 이미지</h2><form method="post" action="/policy/upload-images"><input type="hidden" name="package_id" value="{package_id}"><button class="green">이미지 업로드·게시 HTML 재빌드</button></form><form method="post" action="/policy/remove-featured-body"><input type="hidden" name="package_id" value="{package_id}"><button class="gray">이 본문에서 대표 이미지 제거·재빌드</button></form><p class="muted">대표·본문 이미지 3장은 공개 버킷에 보관합니다. 게시 HTML에는 본문 이미지 2장만 삽입하고, 대표 이미지는 티스토리에서 별도로 업로드·지정합니다.</p></section>
 <section class="panel"><h2>실패 이미지 재시도</h2><form method="post" action="/policy/retry-images"><input type="hidden" name="package_id" value="{package_id}"><select name="provider"><option value="openai">OpenAI</option><option value="pollinations">Pollinations</option></select> <button class="orange">없는 이미지 모두 재시도</button></form></section>
 <section class="panel"><h2>티스토리 게시 완료 기록</h2><form method="post" action="/policy/published"><input type="hidden" name="package_id" value="{package_id}"><div class="row"><input name="url" type="url" style="flex:1" placeholder="https://내블로그.tistory.com/..." value="{html.escape(manifest.get('tistory_url',''))}"><button class="green">게시 완료 표시</button></div></form></section>"""
     return _layout("티스토리 패키지", body)
@@ -267,6 +273,8 @@ def handle_get(handler) -> bool:
 
 def _form(handler) -> dict[str, list[str]]:
     length = int(handler.headers.get("Content-Length", 0))
+    if length < 0 or length > 1_000_000:
+        raise ValueError("요청 본문이 너무 큽니다.")
     return parse_qs(handler.rfile.read(length).decode("utf-8"), keep_blank_values=True)
 
 
@@ -274,15 +282,20 @@ def handle_post(handler) -> bool:
     parsed = urlparse(handler.path)
     if not parsed.path.startswith("/policy"):
         return False
-    data = _form(handler)
     try:
+        data = _form(handler)
         if parsed.path == "/policy/collect":
             _bg([sys.executable, "-m", "src.policy_cli", "collect"])
         elif parsed.path == "/policy/auto-run":
             _bg([sys.executable, "-m", "src.policy_cli", "auto-run"])
         elif parsed.path == "/policy/schedule":
             action = data.get("action", [""])[0]
-            policy_schedule_task.on() if action == "on" else policy_schedule_task.off()
+            if action == "on":
+                policy_schedule_task.on()
+            elif action == "off":
+                policy_schedule_task.off()
+            else:
+                raise ValueError("예약 작업은 on 또는 off만 허용합니다.")
         elif parsed.path == "/policy/settings":
             for key in (
                 "schedule_time", "packages_per_day", "coupang_enabled",
@@ -302,6 +315,8 @@ def handle_post(handler) -> bool:
             if not ids:
                 raise ValueError("생성할 정책 후보를 선택하세요.")
             provider = data.get("provider", ["openai"])[0]
+            if provider not in {"openai", "pollinations"}:
+                raise ValueError("이미지 엔진이 올바르지 않습니다.")
             assets = [
                 data.get(f"coupang_asset_{index}", [""])[0].strip()
                 for index in range(1, 4)
@@ -314,23 +329,31 @@ def handle_post(handler) -> bool:
         elif parsed.path == "/policy/generate-recommended":
             count = max(1, min(int(data.get("count", ["1"])[0]), 10))
             provider = data.get("provider", ["openai"])[0]
+            if provider not in {"openai", "pollinations"}:
+                raise ValueError("이미지 엔진이 올바르지 않습니다.")
             _bg([
                 sys.executable, "-m", "src.policy_cli", "generate-recommended",
                 "--count", str(count), "--provider", provider,
             ])
         elif parsed.path == "/policy/regenerate":
             package_id = data.get("package_id", [""])[0]
+            provider = data.get("provider", ["openai"])[0]
+            if provider not in {"openai", "pollinations"}:
+                raise ValueError("이미지 엔진이 올바르지 않습니다.")
             _bg([
                 sys.executable, "-m", "src.policy_cli", "regenerate-image", package_id,
-                data.get("slot", [""])[0], "--provider", data.get("provider", ["openai"])[0],
+                data.get("slot", [""])[0], "--provider", provider,
             ])
             _redirect(handler, f"/policy/package?id={package_id}")
             return True
         elif parsed.path == "/policy/retry-images":
             package_id = data.get("package_id", [""])[0]
+            provider = data.get("provider", ["openai"])[0]
+            if provider not in {"openai", "pollinations"}:
+                raise ValueError("이미지 엔진이 올바르지 않습니다.")
             _bg([
                 sys.executable, "-m", "src.policy_cli", "retry-images", package_id,
-                "all", "--provider", data.get("provider", ["openai"])[0],
+                "all", "--provider", provider,
             ])
             _redirect(handler, f"/policy/package?id={package_id}")
             return True
@@ -343,6 +366,14 @@ def handle_post(handler) -> bool:
             package_id = data.get("package_id", [""])[0]
             policy_package.upload_package_images(package_id)
             _redirect(handler, f"/policy/package?id={package_id}")
+            return True
+        elif parsed.path == "/policy/remove-featured-body":
+            package_id = data.get("package_id", [""])[0].strip()
+            policy_package.remove_featured_from_body(package_id or None)
+            if package_id:
+                _redirect(handler, f"/policy/package?id={package_id}")
+            else:
+                _redirect(handler, "/policy")
             return True
         elif parsed.path in {"/policy/coupang-assets", "/policy/coupang-links"}:
             package_id = data.get("package_id", [""])[0]

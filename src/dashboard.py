@@ -2,6 +2,7 @@
 import argparse
 import html as htmlmod
 import os
+import secrets
 import socket
 import subprocess
 import sys
@@ -9,7 +10,9 @@ import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from http.cookies import SimpleCookie
 from urllib.parse import parse_qs
+from urllib.parse import urlsplit
 
 from . import policy_web, schedule_task
 from .config import env, get_settings
@@ -19,6 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PY = sys.executable
 LOG = ROOT / "logs" / "pipeline.log"
 PORT = int(env("DASHBOARD_PORT", "5000"))  # .env 로 변경 가능
+DASHBOARD_TOKEN = secrets.token_urlsafe(32)
 
 
 def _pick_port(start: int) -> int:
@@ -142,6 +146,30 @@ def _rocket_btns():
 
 
 class Handler(BaseHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header(
+            "Set-Cookie",
+            f"dashboard_token={DASHBOARD_TOKEN}; Path=/; HttpOnly; SameSite=Strict",
+        )
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        super().end_headers()
+
+    def _same_local_origin(self) -> bool:
+        host = self.headers.get("Host", "")
+        host_name = host.split(":", 1)[0].strip("[]").lower()
+        if host_name not in {"localhost", "127.0.0.1"}:
+            return False
+        origin = self.headers.get("Origin", "")
+        if origin:
+            parsed = urlsplit(origin)
+            if parsed.scheme != "http" or (parsed.hostname or "").lower() not in {"localhost", "127.0.0.1"}:
+                return False
+        cookie = SimpleCookie()
+        cookie.load(self.headers.get("Cookie", ""))
+        value = cookie.get("dashboard_token")
+        return bool(value and secrets.compare_digest(value.value, DASHBOARD_TOKEN))
+
     def do_GET(self):
         if policy_web.handle_get(self):
             return
@@ -164,10 +192,16 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body.encode("utf-8"))
 
     def do_POST(self):
+        if not self._same_local_origin():
+            self.send_response(403)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write("허용되지 않은 로컬 요청입니다. 대시보드를 새로 열어 다시 시도하세요.".encode("utf-8"))
+            return
         if policy_web.handle_post(self):
             return
         if self.path == "/run":
-            _bg([PY, "-m", "src.pipeline"])
+            _bg([PY, "-m", "src.pipeline", "--count", "1"])
         elif self.path == "/run-refresh":
             _bg([PY, "-m", "src.pipeline", "--refresh"])
         elif self.path == "/set":
@@ -175,7 +209,14 @@ class Handler(BaseHTTPRequestHandler):
             data = parse_qs(self.rfile.read(length).decode("utf-8"))
             key, val = data.get("key", [""])[0], data.get("val", [""])[0]
             if key and val:
-                _set_yaml(key, val)
+                try:
+                    _set_yaml(key, val)
+                except (KeyError, ValueError) as exc:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(str(exc).encode("utf-8"))
+                    return
         elif self.path == "/sched-on":
             schedule_task.on()
         elif self.path == "/sched-off":

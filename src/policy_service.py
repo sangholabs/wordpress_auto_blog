@@ -5,12 +5,34 @@ from __future__ import annotations
 import os
 import platform
 import subprocess
+import threading
 from pathlib import Path
+from contextlib import contextmanager
 from typing import Callable
 
 from . import affiliate, policy_package, policy_sources, policy_store
 from .policy_prompts import generate_policy_draft
 from .policy_settings import get as get_policy_settings
+
+
+@contextmanager
+def _generation_heartbeat(candidate_id: str, interval: int = 30):
+    stop = threading.Event()
+
+    def update() -> None:
+        while not stop.wait(interval):
+            try:
+                policy_store.touch_candidate_generation(candidate_id)
+            except Exception:
+                pass
+
+    thread = threading.Thread(target=update, name="policy-generation-heartbeat", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=1)
 
 
 def recover_interrupted_candidates() -> list[dict]:
@@ -79,8 +101,11 @@ def generate_recommended(
     packages, failures = [], []
     for index, item in enumerate(candidates, start=1):
         try:
-            assets = coupang_asset_provider(item) if coupang_asset_provider else []
             print(f"추천 일괄 생성 {index}/{len(candidates)} · {item['title']}", flush=True)
+            callback_item = {
+                **item, "_batch_index": index, "_batch_total": len(candidates),
+            }
+            assets = coupang_asset_provider(callback_item) if coupang_asset_provider else []
             packages.append(
                 generate_candidate(item["id"], image_provider, coupang_assets=assets)
             )
@@ -132,13 +157,14 @@ def generate_candidate(
             f"[진행 2/6] '{candidate['title']}' 글 초안 생성 요청 · LLM 응답 대기(보통 1~3분)",
             flush=True,
         )
-        draft = generate_policy_draft(candidate)
-        print(f"[진행 3/6] 초안 검증 완료 · 제목: {draft['title']}", flush=True)
-        package = policy_package.create_package(
-            candidate, draft, image_provider=image_provider,
-            generation_mode=generation_mode, automation_run_id=automation_run_id,
-            coupang_assets=asset_sources,
-        )
+        with _generation_heartbeat(candidate_id):
+            draft = generate_policy_draft(candidate)
+            print(f"[진행 3/6] 초안 검증 완료 · 제목: {draft['title']}", flush=True)
+            package = policy_package.create_package(
+                candidate, draft, image_provider=image_provider,
+                generation_mode=generation_mode, automation_run_id=automation_run_id,
+                coupang_assets=asset_sources,
+            )
     except Exception as exc:
         policy_store.set_candidate_status(candidate_id, "failed", str(exc))
         raise

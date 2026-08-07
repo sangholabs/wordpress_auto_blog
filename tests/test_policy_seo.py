@@ -51,6 +51,29 @@ def test_local_seo_audit_scores_complete_package():
     assert len(result["heading_outline"]) == 9
 
 
+def test_local_seo_accepts_separate_featured_and_two_supabase_body_images():
+    manifest = _manifest()
+    manifest["supabase"] = {
+        "enabled": True,
+        "configured": True,
+        "images": {
+            "featured": {"local_path": "a.jpg", "public_url": "https://x.test/featured.jpg"},
+            "body1": {"local_path": "b.jpg", "public_url": "https://x.test/body1.jpg"},
+            "body2": {"local_path": "c.jpg", "public_url": "https://x.test/body2.jpg"},
+        },
+    }
+    body = policy_package._image_placeholders(
+        policy_package._portable_html(manifest["draft"]["markdown"]), manifest,
+    )
+    full = f'<article style="{policy_package.ARTICLE_STYLE}">{body}{policy_package._source_footer(manifest)}</article>'
+    assert "https://x.test/featured.jpg" not in full
+    assert "https://x.test/body1.jpg" in full
+    assert "https://x.test/body2.jpg" in full
+    result = policy_seo.audit_local(manifest, full)
+    check = next(item for item in result["checks"] if item["code"] == "supabase_images")
+    assert check["passed"] is True
+
+
 def test_published_seo_audit_checks_meta_and_placeholders():
     good = """<!doctype html><html><head><title>정책 제목</title>
     <meta name="description" content="설명"><meta name="viewport" content="width=device-width">

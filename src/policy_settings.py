@@ -16,6 +16,7 @@ DEFAULTS = {
     "image_provider": "openai",
     "image_model": "gpt-image-2",
     "image_quality": "medium",
+    "image_timeout_sec": 360,
     "images_enabled": True,
     "supabase_upload_enabled": True,
     "coupang_enabled": True,
@@ -79,6 +80,7 @@ def normalize(key: str, value: object) -> object:
         ranges = {
             "packages_per_day": (1, 5), "candidate_refresh_hours": (1, 168),
             "generation_stale_minutes": (15, 720),
+            "image_timeout_sec": (60, 900),
             "coupang_max_blocks": (1, 3), "seo_title_min": (10, 60),
             "seo_title_max": (20, 80), "seo_description_min": (30, 180),
             "seo_description_max": (60, 250), "seo_min_body_chars": (800, 10000),

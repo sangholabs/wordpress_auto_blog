@@ -55,8 +55,9 @@ def test_openai_image_contract_uses_gpt_image_settings(monkeypatch):
             captured.update(kwargs)
             return SimpleNamespace(data=[SimpleNamespace(b64_json=base64.b64encode(b"jpeg").decode())])
     class Client:
-        def __init__(self, api_key):
+        def __init__(self, api_key, **kwargs):
             captured["api_key"] = api_key
+            captured.update(kwargs)
             self.images = Images()
     import openai
     monkeypatch.setattr(openai, "OpenAI", Client)
@@ -65,7 +66,8 @@ def test_openai_image_contract_uses_gpt_image_settings(monkeypatch):
     content, ext, model = policy_images._openai_bytes("prompt", "1200x640", "medium")
     assert content == b"jpeg" and ext == "jpg" and model == "gpt-image-2"
     assert captured == {
-        "api_key": "secret", "model": "gpt-image-2", "prompt": "prompt",
+        "api_key": "secret", "timeout": 360, "max_retries": 0,
+        "model": "gpt-image-2", "prompt": "prompt",
         "size": "1200x640", "quality": "medium", "output_format": "jpeg",
         "output_compression": 88,
     }
@@ -105,6 +107,7 @@ def test_tistory_package_has_copy_friendly_structure(monkeypatch, tmp_path):
     tistory = html_path.read_text(encoding="utf-8-sig")
     assert (folder / "02_본문_HTML블록용.txt").read_text(encoding="utf-8-sig") == tistory
     assert "data-policy-image-slot=\"body1\"" in tistory
+    assert "data-policy-image-slot=\"featured\"" not in tistory
     assert "<style" not in tistory
     assert "배너1" in tistory and "배너2" in tistory
     for segment in (folder / "segments").glob("*.html"):
@@ -114,7 +117,11 @@ def test_tistory_package_has_copy_friendly_structure(monkeypatch, tmp_path):
         assert segment_soup.find("article") is None
     manifest = json.loads((folder / "06_manifest.json").read_text(encoding="utf-8"))
     assert set(manifest["current_images"]) == {"featured", "body1", "body2"}
-    assert manifest["schema_version"] == 7
+    assert manifest["schema_version"] == 8
+    assert manifest["publication"] == {
+        "featured_image_in_body": False,
+        "body_image_slots": ["body1", "body2"],
+    }
     assert manifest["seo"]["h1_in_body"] is False
     assert manifest["seo"]["image_alt_texts"]["featured"] == "가족 일러스트"
     assert "," not in manifest["seo"]["suggested_slug"]
@@ -122,6 +129,7 @@ def test_tistory_package_has_copy_friendly_structure(monkeypatch, tmp_path):
     guide = (folder / "00_게시가이드.txt").read_text(encoding="utf-8-sig")
     assert "'HTML 블록'" in guide
     assert "'코드블록'은 HTML 코드를 글에 그대로 보여주는 기능" in guide
+    assert "대표 이미지는 게시용 본문 HTML에 포함되지 않습니다" in guide
 
 
 def test_policy_package_can_disable_images_without_marking_retry(monkeypatch, tmp_path):
@@ -172,7 +180,24 @@ A. 공식 안내에서 확인하세요.
     assert question.find("br") is not None
 
 
-def test_supabase_images_are_embedded_in_publish_html_and_segments():
+def test_portable_html_renders_checklist_as_one_checkbox_without_bullet():
+    rendered = policy_package._portable_html(
+        "## 신청 전 최종 체크리스트\n\n- [ ] 대상 자격 확인\n- 서류 준비\n\n"
+        "## 일반 안내\n\n- 일반 목록"
+    )
+    soup = BeautifulSoup(rendered, "html.parser")
+    first, second, ordinary = soup.find_all("li")
+    assert first.get_text(" ", strip=True) == "☐ 대상 자격 확인"
+    assert "[ ]" not in first.get_text()
+    assert first.get("data-policy-checklist-item") == "true"
+    assert "list-style:none" in first["style"]
+    assert second.get_text(" ", strip=True) == "☐ 서류 준비"
+    assert "list-style:none" in second["style"]
+    assert ordinary.get_text(" ", strip=True) == "일반 목록"
+    assert "list-style:none" not in ordinary["style"]
+
+
+def test_supabase_featured_is_stored_but_only_body_images_are_embedded():
     manifest = {
         "generation": {"images_enabled": True},
         "draft": _draft(),
@@ -194,15 +219,44 @@ def test_supabase_images_are_embedded_in_publish_html_and_segments():
     )
     soup = BeautifulSoup(body, "html.parser")
     assert [figure["data-policy-image-slot"] for figure in soup.find_all("figure")] == [
-        "featured", "body1", "body2",
+        "body1", "body2",
     ]
     assert all("supabase.co" in image["src"] for image in soup.find_all("img"))
     assert all(image.get("alt") for image in soup.find_all("img"))
+    assert "featured.jpg" not in body
 
     segments = policy_package._split_segments(f'<article style="x">{body}</article>')
     assert 'data-policy-image-slot="body1"' in segments[0]
     assert 'data-policy-image-slot="body2"' in segments[1]
-    assert sum(segment.count("supabase.co") for segment in segments) == 3
+    assert sum(segment.count("supabase.co") for segment in segments) == 2
+
+
+def test_remove_featured_from_body_rebuilds_and_validates_package(monkeypatch, tmp_path):
+    folder = tmp_path / "package"
+    (folder / "segments").mkdir(parents=True)
+    package = {"id": "post-1", "title": "정책 글", "path": str(folder)}
+    manifest = {
+        "supabase": {"images": {"featured": {"public_url": "https://x.test/featured.jpg"}}},
+        "status": "ready", "updated_at": "2026-08-05T00:00:00+09:00", "seo": {},
+    }
+    rendered = []
+    monkeypatch.setattr(policy_package.policy_store, "get_package", lambda package_id: package)
+    monkeypatch.setattr(policy_package.policy_store, "save_package", lambda value: None)
+    monkeypatch.setattr(policy_package.policy_store, "save_seo_audit", lambda *args: None)
+
+    def render(package_dir, current_manifest, *, sync_storage=True):
+        rendered.append(sync_storage)
+        (folder / "02_본문_티스토리.html").write_text(
+            '<article><figure data-policy-image-slot="body1"><img src="https://x.test/body1.jpg"></figure></article>',
+            encoding="utf-8",
+        )
+        (folder / "02_본문_HTML블록용.txt").write_text("<article>본문</article>", encoding="utf-8")
+
+    monkeypatch.setattr(policy_package, "render_package_files", render)
+    monkeypatch.setattr(policy_package, "load_manifest", lambda package_dir: manifest)
+    result = policy_package.remove_featured_from_body("post-1")
+    assert rendered == [False]
+    assert result == {"total": 1, "rebuilt": 1, "errors": []}
 
 
 def test_policy_affiliate_can_be_disabled(monkeypatch):

@@ -212,6 +212,15 @@ def set_candidate_status(
         )
 
 
+def touch_candidate_generation(candidate_id: str, path: Path | None = None) -> None:
+    """진행 중인 생성 작업의 heartbeat 시각을 갱신한다."""
+    with _connect(path) as conn:
+        conn.execute(
+            "UPDATE candidates SET generation_started_at=? WHERE id=? AND status='generating'",
+            (now_iso(), candidate_id),
+        )
+
+
 def recover_stale_generating(
     stale_minutes: int = 60, path: Path | None = None,
 ) -> list[dict]:

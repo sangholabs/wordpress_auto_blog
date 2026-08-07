@@ -21,8 +21,26 @@ def _load_yaml(name: str) -> dict:
         return yaml.safe_load(f)
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def get_settings() -> dict:
-    return _load_yaml("settings.yaml")
+    defaults = _load_yaml("settings.yaml") or {}
+    local_path = ROOT / "config" / "settings.local.yaml"
+    if not local_path.exists():
+        return defaults
+    with open(local_path, encoding="utf-8") as file:
+        local = yaml.safe_load(file) or {}
+    if not isinstance(local, dict):
+        raise RuntimeError("config/settings.local.yaml은 YAML 객체 형식이어야 합니다.")
+    return _deep_merge(defaults, local)
 
 
 def get_categories() -> dict:

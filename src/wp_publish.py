@@ -36,6 +36,52 @@ def _category_name(slug: str) -> str | None:
     return None
 
 
+def _post_slug(keyword: str) -> str:
+    return re.sub(r"\s+", "-", keyword.strip()).strip("-")
+
+
+def _find_existing_post(slug: str) -> dict | None:
+    if not slug:
+        return None
+    response = requests.get(
+        f"{_base()}/posts",
+        params={"slug": slug, "status": "any", "context": "edit", "per_page": 1},
+        auth=_auth(),
+        timeout=20,
+    )
+    response.raise_for_status()
+    items = response.json()
+    return items[0] if isinstance(items, list) and items else None
+
+
+def _meta_rejected(response: requests.Response) -> bool:
+    if response.status_code != 400:
+        return False
+    try:
+        payload = response.json()
+    except ValueError:
+        return False
+    if payload.get("code") not in {"rest_invalid_param", "rest_invalid_meta_value"}:
+        return False
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    params = data.get("params") if isinstance(data.get("params"), dict) else {}
+    details = data.get("details") if isinstance(data.get("details"), dict) else {}
+    message = str(payload.get("message", "")).lower()
+    return "meta" in params or "meta" in details or "meta" in message
+
+
+def _post_payload(payload: dict, slug: str) -> requests.Response | dict:
+    try:
+        response = requests.post(f"{_base()}/posts", json=payload, auth=_auth(), timeout=30)
+    except requests.RequestException as exc:
+        existing = _find_existing_post(slug)
+        if existing:
+            print(f"게시 응답이 끊겼지만 동일 slug 글을 확인했습니다 → {existing.get('link')}")
+            return existing
+        raise RuntimeError("WordPress 게시 요청 중 연결이 끊겼고 동일 slug 글도 확인되지 않았습니다.") from exc
+    return response
+
+
 def publish_post(post: dict, status: str | None = None) -> dict:
     from .formatter import to_html
 
@@ -46,9 +92,14 @@ def publish_post(post: dict, status: str | None = None) -> dict:
         )
     status = status or get_settings()["publish"]["status"]
     kw = post.get("keyword", "")
+    slug = _post_slug(kw)
+    existing = _find_existing_post(slug)
+    if existing:
+        print(f"동일 slug 글이 이미 있어 중복 게시를 건너뜁니다 → {existing.get('link')}")
+        return {**existing, "_duplicate_skipped": True}
     payload = {
         "title": post["title"],
-        "slug": re.sub(r"\s+", "-", kw.strip()) or None,  # 긴 제목 대신 키워드 기반 짧은 슬러그
+        "slug": slug or None,  # 긴 제목 대신 키워드 기반 짧은 슬러그
         "content": to_html(post, for_wordpress=True),
         "status": status,
         "excerpt": post.get("meta_description", ""),
@@ -66,12 +117,16 @@ def publish_post(post: dict, status: str | None = None) -> dict:
     media_id = generate_featured_media(kw)
     if media_id:
         payload["featured_media"] = media_id
-    r = requests.post(f"{_base()}/posts", json=payload, auth=_auth(), timeout=30)
-    if r.status_code >= 400 and "meta" in payload:
+    r = _post_payload(payload, slug)
+    if isinstance(r, dict):
+        return r
+    if _meta_rejected(r) and "meta" in payload:
         payload.pop("meta")  # Rank Math meta 미지원 환경이면 빼고 재시도
-        r = requests.post(f"{_base()}/posts", json=payload, auth=_auth(), timeout=30)
+        r = _post_payload(payload, slug)
+        if isinstance(r, dict):
+            return r
     if r.status_code >= 400:
-        raise RuntimeError(f"게시 실패 {r.status_code}: {r.text}")
+        raise RuntimeError(f"게시 실패 {r.status_code}: {r.text[:500]}")
     d = r.json()
     print(f"게시 완료({status}) → {d.get('link')}")
     return d

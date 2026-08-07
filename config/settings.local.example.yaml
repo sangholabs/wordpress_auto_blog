@@ -1,0 +1,10 @@
+# 이 파일을 settings.local.yaml로 복사하면 PC별 운영 설정을 덮어쓸 수 있습니다.
+# 메뉴와 대시보드에서 값을 바꾸면 settings.local.yaml이 자동 생성됩니다.
+publish:
+  status: publish
+  posts_per_day: 3
+  schedule_time: "09:00"
+policy_workspace:
+  auto_generate: false
+  packages_per_day: 1
+  schedule_time: "09:30"

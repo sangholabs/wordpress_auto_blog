@@ -47,14 +47,18 @@ def _windows_status() -> bool:
 
 
 def _windows_action() -> str:
-    python = ROOT / ".venv" / "Scripts" / "python.exe"
-    return f'"{python}" -m src.policy_runner'
+    runner = ROOT / "policy_run.bat"
+    return f'cmd.exe /d /c ""{runner}""'
 
 
 def _windows_on(time_value: str) -> bool:
     python = ROOT / ".venv" / "Scripts" / "python.exe"
     if not python.is_file():
         print("Windows 가상환경 `.venv\\Scripts\\python.exe`를 찾을 수 없습니다.")
+        return False
+    runner = ROOT / "policy_run.bat"
+    if not runner.is_file():
+        print("티스토리 예약 실행 파일 `policy_run.bat`을 찾을 수 없습니다.")
         return False
     try:
         result = subprocess.run(

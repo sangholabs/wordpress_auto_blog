@@ -6,6 +6,7 @@
 *token*.json
 secrets/
 config/coupang_widget.html
+config/settings.local.yaml
 
 # === 파이썬 ===
 .venv/

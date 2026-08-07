@@ -1,69 +1,115 @@
 # 다른 Windows 또는 Mac에서 이어받기
 
-GitHub에는 코드와 문서만 있고 개인 시크릿인 `.env`, `config/coupang_widget.html`, 발행 이력은 없다. 새 PC에서 아래 순서로 준비한다.
+GitHub에는 코드와 공식 기본 설정만 있다. API 키, 이 PC의 운영값, 발행 이력, 티스토리 패키지와 이미지는 별도로 안전하게 옮겨야 한다.
 
-## 1. 저장소 받기
+## 1. 새 PC에 설치
 
 ```sh
-git clone https://github.com/<본인계정>/<저장소이름>.git
-cd <저장소이름>
+git clone https://github.com/sangholabs/wordpress_auto_blog.git
+cd wordpress_auto_blog
 ```
 
-## 2. 환경 설치
-
-Windows는 Python 3.12, Node.js LTS, Git을 `winget`으로 설치한다. macOS는 Homebrew 설치 후 다음을 실행한다.
-
-```zsh
-brew install python@3.12 node git
-```
-
-가상환경:
+Windows:
 
 ```powershell
-# Windows PowerShell
+winget install -e --id Python.Python.3.12
+winget install -e --id Git.Git
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-playwright install chromium
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+copy .env.example .env
+copy config\settings.local.example.yaml config\settings.local.yaml
 ```
+
+macOS:
 
 ```zsh
-# macOS zsh
+brew install python@3.12 git
 python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-playwright install chromium
+./.venv/bin/python -m pip install -r requirements.txt
+cp .env.example .env
+cp config/settings.local.example.yaml config/settings.local.yaml
+chmod +x control.sh run.sh
 ```
 
-Claude Code를 쓸 경우 설치하고 이 PC에서 한 번 로그인한다.
+`LLM_PROVIDER=anthropic`이면 `ANTHROPIC_API_KEY`만 필요하고 Claude Code 설치·로그인은 필요 없다. `claude_code`를 계속 쓸 때만 Node.js, `npm install -g @anthropic-ai/claude-code`, 이 PC에서의 `claude` 로그인을 추가한다. Playwright와 Chrome도 쿠팡 도우미를 쓸 때만 설치한다.
+
+## 2. 기존 PC에서 옮길 개인 파일
+
+다음 항목은 Git에서 제외된다. 필요한 것만 암호화된 저장소나 안전한 이동 수단으로 복사한다.
+
+| 항목 | 용도 | 권장 |
+|---|---|---|
+| `.env` | WordPress·LLM·보조금24·Supabase·쿠팡 키 | 필수 |
+| `config/settings.local.yaml` | 실제 편수·시각·광고·이미지 설정 | 권장 |
+| `config/coupang_widget.html` | 개인 쿠팡 공용 소재 | 사용할 때 |
+| `data/published.json` | WordPress 중복 발행 방지 | 반드시 권장 |
+| `data/policy_workspace.sqlite3` | 정책 후보·패키지·SEO·게시 상태 | 티스토리 작업 시 권장 |
+| `output/tistory/` | 티스토리 제목·본문·이미지·manifest | 보관 필수 |
+
+`logs/`, 임시 캐시, `.venv/`는 복사하지 않아도 된다. 가상환경은 새 PC에서 다시 만든다.
+
+Supabase의 `blog_image` 객체는 원격 프로젝트에 이미 있으므로 같은 프로젝트 키를 쓰는 새 PC로 파일 자체를 다시 복사할 필요는 없다. 다만 `output/tistory/`의 manifest와 SQLite를 같이 옮겨야 기존 공개 URL과 로컬 패키지를 추적하기 쉽다.
+
+SQLite를 잃었지만 티스토리 패키지와 `06_manifest.json`이 남아 있으면 다음으로 다시 색인한다.
 
 ```sh
-npm install -g @anthropic-ai/claude-code
-claude
+python -m src.policy_cli reindex
 ```
 
-## 3. 개인 파일 준비
+## 3. 첫 진단
 
-- Windows: `copy .env.example .env`
-- macOS: `cp .env.example .env`
+```sh
+python -m src.doctor
+python -m src.doctor --live
+```
 
-정책·티스토리 작업실도 사용할 경우 새 `.env`에 `DATA_GO_KR_API_KEY`와 `OPENAI_API_KEY`를 다시 입력한다. `output/tistory/`와 `data/policy_workspace.sqlite3`는 Git에 포함되지 않으므로 기존 PC에서 보관한 글 패키지를 별도로 복사한다. SQLite 색인이 없으면 `python -m src.policy_cli reindex`로 각 `06_manifest.json`에서 복원할 수 있다.
-- 최소 WordPress 자격증명과 사이트 정보를 입력한다.
-- 배너를 쓰면 `config/coupang_widget.example.html`을 `config/coupang_widget.html`로 복사하고 개인 iframe을 넣는다.
-- `config/categories.yaml`의 니치와 seed 키워드를 확인한다.
-- 중복 발행 방지를 이어가려면 이전 PC의 `data/published.json`을 보안 채널로 복사한다.
+`--live`는 보조금24·Supabase·WordPress를 읽기 전용으로 확인한다. WordPress 게시, 유료 LLM, OpenAI 이미지 생성은 실행하지 않는다.
 
-## 4. 실행
+## 4. 실행 확인
 
-- Windows: `제어판.bat`
-- macOS: `./control.sh`
+Windows는 `제어판.bat`, macOS는 `./control.sh`를 실행한다. 메인 1~16은 WordPress, 17번 내부는 티스토리 작업실이다.
 
-제어판 3번은 Windows 작업 스케줄러 또는 macOS launchd에 매일 자동발행을 등록한다. 새 PC에서는 기존 예약이 복사되지 않으므로 반드시 다시 등록한다. macOS에서 Node/Claude 경로가 바뀐 경우에도 3번으로 재등록한다.
+WordPress를 실제 공개하기 전에 초안 모드에서 정확히 1편만 시험하려면 제어판에서 발행모드를 초안으로 바꾼 뒤 실행한다.
 
-직접 실행은 Windows에서 `.\.venv\Scripts\python.exe -m src.pipeline`, macOS에서 `./run.sh`를 사용한다. 자세한 설치·문제 해결과 쿠팡 Chrome/CDP 명령은 `SETUP.md`를 참고한다.
+```sh
+python -m src.pipeline --count 1
+```
 
-## 5. 동기화 주의사항
+티스토리는 게시하지 않고 패키지만 확인할 수 있다.
 
-- 코드 변경은 `git pull`/`git push`로 동기화한다.
-- `.env`, 쿠팡 배너, `data/`, `logs/`, `output/`은 Git에 포함되지 않는다.
-- 발행 이력을 옮기지 않으면 같은 키워드가 새 PC에서 다시 선택될 수 있다.
+```sh
+python -m src.policy_cli packages
+python -m src.policy_cli preview 글ID
+python -m src.policy_cli seo-check 글ID
+```
+
+대표 이미지는 티스토리에서 따로 업로드하고 대표로 지정한다. 본문은 `02_본문_HTML블록용.txt`를 HTML 블록/HTML 모드에 붙여넣는다.
+
+## 5. 예약 작업 다시 등록
+
+Windows 작업 스케줄러와 macOS LaunchAgent 상태는 파일 복사나 Git clone으로 이전되지 않는다. 필요한 자동화만 새 PC에서 각각 등록한다.
+
+WordPress:
+
+```sh
+python -m src.schedule_task on
+python -m src.schedule_task status
+```
+
+티스토리 패키지 자동 생성:
+
+```sh
+python -m src.policy_schedule_task on
+python -m src.policy_schedule_task status
+```
+
+WordPress 예약은 `run.bat`/`run.sh`와 `logs/pipeline.log`, 티스토리는 `policy_run.bat`/`src.policy_runner`와 `logs/policy_pipeline.log`를 사용한다. 둘은 독립적이다.
+
+## 6. GitHub 주의사항
+
+- 코드 업데이트는 `git pull`로 받고 개인 파일 충돌을 만들지 않는다.
+- `.env`, `settings.local.yaml`, 쿠팡 소재, `data/`, `output/`, `logs/`를 강제로 add하지 않는다.
+- 제어판 push는 전체 테스트와 비밀값 검사를 통과한 뒤 사용자 확인을 받아 실행한다.
+- GitHub CLI가 필요한 작업은 `gh auth login` 후 `gh auth status`가 성공하는지 확인한다. 일반 `git push`는 `gh`와 별개다.
+
+세부 설치와 문제 해결은 [SETUP.md](SETUP.md)를 따른다.

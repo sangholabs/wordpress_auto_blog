@@ -23,7 +23,7 @@ def test_supabase_sync_uploads_current_images_and_records_public_urls(monkeypatc
     }
     cfg = {
         "enabled": True, "base_url": "https://project.supabase.co", "key": "secret",
-        "bucket": "tistory-images", "prefix": "policy-tistory",
+        "bucket": "blog_image", "prefix": "policy-tistory",
     }
     uploads = []
     monkeypatch.setattr(policy_storage, "_config", lambda: dict(cfg))
@@ -41,7 +41,7 @@ def test_supabase_sync_uploads_current_images_and_records_public_urls(monkeypatc
     remote = manifest["supabase"]["images"]["featured"]
     assert remote["local_path"] == "images/featured.jpg"
     assert remote["public_url"].startswith(
-        "https://project.supabase.co/storage/v1/object/public/tistory-images/"
+        "https://project.supabase.co/storage/v1/object/public/blog_image/"
     )
     assert uploads[0][1]["headers"]["x-upsert"] == "true"
     assert uploads[0][1]["headers"]["Content-Type"] == "image/jpeg"
@@ -50,7 +50,7 @@ def test_supabase_sync_uploads_current_images_and_records_public_urls(monkeypatc
 
 def test_supabase_sync_keeps_local_package_when_configuration_is_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(policy_storage, "_config", lambda: {
-        "enabled": True, "base_url": "", "key": "", "bucket": "tistory-images", "prefix": "policy",
+        "enabled": True, "base_url": "", "key": "", "bucket": "blog_image", "prefix": "policy",
     })
     monkeypatch.setattr(
         policy_storage, "_validated_config",
@@ -68,3 +68,38 @@ def test_verify_status_checks_real_public_bucket(monkeypatch):
     monkeypatch.setattr(policy_storage, "_validated_config", lambda: {"bucket": "blog_image"})
     monkeypatch.setattr(policy_storage, "_check_public_bucket", lambda cfg: None)
     assert policy_storage.verify_status()["verified"] is True
+
+
+def test_supabase_sync_reuses_complete_public_urls_without_bucket_request(monkeypatch, tmp_path):
+    image = tmp_path / "images" / "body1.jpg"
+    image.parent.mkdir()
+    image.write_bytes(b"jpeg")
+    manifest = {
+        "current_images": {"body1": "images/body1.jpg"},
+        "supabase": {
+            "images": {
+                "body1": {
+                    "local_path": "images/body1.jpg",
+                    "public_url": "https://project.supabase.co/storage/v1/object/public/blog_image/body1.jpg",
+                }
+            }
+        },
+    }
+    monkeypatch.setattr(
+        policy_storage,
+        "_config",
+        lambda: {
+            "enabled": True,
+            "base_url": "https://project.supabase.co",
+            "key": "secret",
+            "bucket": "blog_image",
+            "prefix": "policy-tistory",
+        },
+    )
+    monkeypatch.setattr(
+        policy_storage,
+        "_validated_config",
+        lambda: (_ for _ in ()).throw(AssertionError("설정 검증을 다시 호출하면 안 됩니다.")),
+    )
+
+    assert policy_storage.sync_manifest_images(tmp_path, manifest) == []

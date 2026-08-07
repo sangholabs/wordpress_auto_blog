@@ -71,11 +71,14 @@ def _workspace_status() -> None:
         f" 추천후보:{ready}건 / 마지막 수집:{last_collect} / "
         f"이미지 재시도:{incomplete}건 / 구형패키지:{legacy}건"
     )
+    coupang_mode = affiliate.monetization_mode()
     print(
-        f" 쿠팡:{on(settings['coupang_enabled'])}({affiliate.monetization_mode()}) / "
+        f" 쿠팡:{on(settings['coupang_enabled'])}({coupang_mode}) / "
         f"배너:{settings['coupang_layout']}/{settings['coupang_max_blocks']}개 / "
         f"로켓전용:{on(settings['rocket_only'])}"
     )
+    if settings["coupang_enabled"] and coupang_mode == "search-link":
+        print(" [주의] 쿠팡 API·공용 배너가 없어 자동 글의 검색 링크는 수익 추적이 보장되지 않습니다.")
     print(
         f" 글엔진:{env('LLM_PROVIDER', 'claude_code')} / "
         f"이미지:{settings['image_provider']}/{on(settings['images_enabled'])} / "
@@ -169,6 +172,7 @@ def _claude_login() -> None:
 def _image_settings_menu() -> None:
     print("1) 새 글 이미지 생성 켜기  2) 새 글 이미지 생성 끄기")
     print("3) Supabase 자동 업로드 켜기/끄기  4) 기존 패키지 지금 업로드  5) Supabase 설정 상태")
+    print("6) 기존 패키지 본문에서 대표 이미지 제거 (글 ID/all)")
     choice = input("선택: ").strip()
     if choice in {"1", "2"}:
         enabled = choice == "1"
@@ -186,6 +190,17 @@ def _image_settings_menu() -> None:
     elif choice == "5":
         state = policy_storage.verify_status()
         print(json.dumps(state, ensure_ascii=False, indent=2))
+    elif choice == "6":
+        _print_packages()
+        target = input("글 ID (모든 기존 패키지는 all): ").strip()
+        if not target:
+            raise ValueError("글 ID 또는 all을 입력하세요.")
+        result = policy_package.remove_featured_from_body(
+            None if target.lower() == "all" else target
+        )
+        print(f"본문 대표 이미지 제거 완료: 성공 {result['rebuilt']}/{result['total']}건")
+        for error in result["errors"]:
+            print(f"- {error}")
 
 
 def _clipboard_text() -> str:
@@ -201,17 +216,27 @@ def _clipboard_text() -> str:
     return result.stdout.strip()
 
 
-def _prompt_coupang_assets() -> list[str]:
+def _prompt_coupang_assets(
+    article_index: int | None = None, article_total: int | None = None,
+) -> list[str]:
     limit = max(1, min(int(policy_settings.get().get("coupang_max_blocks", 2)), 3))
     assets: list[str] = []
     print("쿠팡 소재는 글별로 선택 사항입니다. 입력 순서대로 본문 광고 위치에 배치됩니다.")
     print("지원: 상품 URL / 링크+이미지 HTML / iframe / PartnersCoupang script")
     while len(assets) < limit:
+        article = (
+            f"글 {article_index}/{article_total} · "
+            if article_index and article_total else ""
+        )
         choice = input(
-            f"쿠팡 소재 {len(assets) + 1}/{limit}  1) URL  2) 클립보드 코드  3) 코드 파일  0) 입력 완료: "
+            f"{article}쿠팡 소재 {len(assets) + 1}/{limit}  "
+            "1) URL  2) 클립보드 코드  3) 코드 파일  0) 입력 완료: "
         ).strip()
-        if choice in {"", "0"}:
+        if choice == "0":
             break
+        if not choice:
+            print("빈 입력은 완료가 아닙니다. 0을 입력하면 이 글의 소재 입력을 마칩니다.")
+            continue
         if choice == "1":
             source = input("쿠팡 파트너스 상품 URL: ").strip()
         elif choice == "2":
@@ -298,10 +323,10 @@ def interactive() -> None:
                 _print_candidates(status="ready")
                 ids = input("생성할 후보 ID(여러 개는 공백 구분): ").split()
                 provider = input("이미지 엔진 1) OpenAI  2) Pollinations : ").strip()
-                for candidate_id in ids:
+                for article_index, candidate_id in enumerate(ids, start=1):
                     try:
                         print(f"[{candidate_id}] 글에 넣을 쿠팡 파트너스 소재를 선택하세요.")
-                        coupang_assets = _prompt_coupang_assets()
+                        coupang_assets = _prompt_coupang_assets(article_index, len(ids))
                         policy_service.generate_candidate(
                             candidate_id, "pollinations" if provider == "2" else "openai",
                             coupang_assets=coupang_assets,
@@ -317,7 +342,9 @@ def interactive() -> None:
                         f"[{candidate['id']}] {candidate['title']}에 넣을 "
                         "쿠팡 파트너스 소재를 선택하세요."
                     )
-                    return _prompt_coupang_assets()
+                    return _prompt_coupang_assets(
+                        candidate.get("_batch_index"), candidate.get("_batch_total")
+                    )
 
                 policy_service.generate_recommended(count, provider, prompt_assets)
             elif choice == "7":
@@ -346,11 +373,11 @@ def interactive() -> None:
                 print("게시 완료로 표시했습니다.")
             elif choice == "13":
                 _print_packages()
-                package_id = input("글 ID (구형 패키지 전체는 all): ").strip()
+                package_id = input("글 ID (모든 기존 패키지는 all): ").strip()
                 if package_id.lower() == "all":
-                    result = policy_package.rebuild_outdated_packages()
+                    result = policy_package.rebuild_all_packages()
                     print(
-                        f"구형 패키지 재빌드 완료: 성공 {result['rebuilt']}/{result['total']}건"
+                        f"전체 패키지 재빌드 완료: 성공 {result['rebuilt']}/{result['total']}건"
                     )
                     for error in result["errors"]:
                         print(f"- {error}")
@@ -458,6 +485,9 @@ def build_parser() -> argparse.ArgumentParser:
     rebuild = sub.add_parser("rebuild")
     rebuild.add_argument("package_id", nargs="?")
     rebuild.add_argument("--all", action="store_true", dest="rebuild_all")
+    remove_featured = sub.add_parser("remove-featured-from-body")
+    remove_featured.add_argument("package_id", nargs="?")
+    remove_featured.add_argument("--all", action="store_true", dest="remove_all")
     copy = sub.add_parser("copy")
     copy.add_argument("package_id")
     copy.add_argument("part", choices=("title", "html", "segment1", "segment2", "segment3", "tags"))
@@ -574,11 +604,20 @@ def main(argv: list[str] | None = None) -> int:
         print(policy_package.create_zip(args.package_id))
     elif args.command == "rebuild":
         if args.rebuild_all:
-            print(json.dumps(policy_package.rebuild_outdated_packages(), ensure_ascii=False, indent=2))
+            print(json.dumps(policy_package.rebuild_all_packages(), ensure_ascii=False, indent=2))
         elif args.package_id:
             print(policy_package.rebuild_package(args.package_id)["path"])
         else:
             raise ValueError("rebuild에는 글 ID 또는 --all이 필요합니다.")
+    elif args.command == "remove-featured-from-body":
+        if not args.package_id and not args.remove_all:
+            raise ValueError("remove-featured-from-body에는 글 ID 또는 --all이 필요합니다.")
+        print(json.dumps(
+            policy_package.remove_featured_from_body(None if args.remove_all else args.package_id),
+            ensure_ascii=False,
+            indent=2,
+            default=str,
+        ))
     elif args.command == "mark-published":
         policy_package.mark_manifest_published(args.package_id, args.url)
         print("게시 완료로 표시했습니다.")

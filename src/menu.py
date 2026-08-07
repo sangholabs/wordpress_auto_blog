@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import sys
 
-from . import banner_setup, pages, pipeline, policy_cli, schedule_task
+from . import banner_setup, git_tools, pages, pipeline, policy_cli, schedule_task
 from .config import ROOT, env, get_settings
 from .set_option import set_option
 
@@ -72,9 +72,7 @@ def _dashboard():
 
 
 def _push():
-    subprocess.run(["git", "add", "."], cwd=str(ROOT))
-    subprocess.run(["git", "commit", "-m", "update"], cwd=str(ROOT))
-    subprocess.run(["git", "push"], cwd=str(ROOT))
+    git_tools.push_interactive()
 
 
 def _claude_login():
@@ -100,13 +98,9 @@ def _ask_int(prompt: str, lo: int, hi: int):
     return None
 
 
-def main():
-    while True:
-        print(MENU)
-        _status()
-        c = input("번호 선택: ").strip()
+def _dispatch(c: str) -> bool:
         if c == "1":
-            pipeline.run(refresh_keywords=False)
+            pipeline.run(refresh_keywords=False, count=1)
         elif c == "2":
             pipeline.run(refresh_keywords=True)
         elif c == "3":
@@ -150,10 +144,28 @@ def main():
         elif c == "17":
             policy_cli.interactive()
         elif c == "0":
-            break
+            return False
         else:
             print("잘못된 번호입니다.")
-        input("\n[Enter] 메뉴로 돌아가기...")
+        return True
+
+
+def main():
+    while True:
+        print(MENU)
+        _status()
+        try:
+            c = input("번호 선택: ").strip()
+            if not _dispatch(c):
+                break
+        except KeyboardInterrupt:
+            print("\n[중단] 현재 작업을 중단하고 제어판으로 돌아갑니다.")
+        except Exception as exc:
+            print(f"[오류] {exc}")
+        try:
+            input("\n[Enter] 메뉴로 돌아가기...")
+        except KeyboardInterrupt:
+            print()
 
 
 if __name__ == "__main__":

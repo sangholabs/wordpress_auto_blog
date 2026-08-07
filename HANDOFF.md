@@ -1,86 +1,126 @@
-# 핸드오프 (2026-08-04 기준)
+# 운영 인수인계 (2026-08-05)
 
-다음 세션(사람/에이전트)이 바로 이어받기 위한 요약. 상세 결정 근거는 `context-notes.md`, 할 일은 `checklist.md` 참고.
+## 1. 프로젝트 범위
 
-## 1. 프로젝트 한 줄 요약
+한 저장소에 두 흐름이 있다.
 
-WordPress(설치형, 카페24) 블로그에 쿠팡 파트너스 + 애드센스 수익형 콘텐츠를 자동으로 기획·생성·발행하는 독립 파이썬 프로젝트. 토큰은 글 생성 단계에서만 쓰고 나머지는 0토큰.
+- WordPress: 생활·리빙·가전 글을 생성해 설치형 WordPress REST API로 자동 게시한다.
+- 티스토리 정책 작업실: 30~50대 주부·직장인에게 유용한 공식 정책을 수집해 제목·본문·대표/본문 이미지·출처·SEO 패키지를 만든다. 티스토리 게시는 사용자가 수동으로 한다.
 
-## 2. 현재 상태 — 완성·GitHub 배포 완료
+메인 제어판 1~16은 WordPress, 17번 내부의 1~24는 티스토리다. 공용 API 키와 쿠팡 소재를 제외한 편수·시각·광고·이미지 동작 설정은 서로 독립적이다.
 
-전 과정이 end-to-end로 동작 확인됨(테스트 발행 p=56~58, draft). GitHub 푸시 완료(시크릿 누출 없음 검증).
-키워드 수집 → 주제 선정 → 글 생성(Claude Code) → 가독성 HTML 포맷 → 쿠팡 배너 삽입 → WordPress 발행.
+## 2. 현재 코드 상태
 
-- LLM: `claude_code`(로컬 Claude Code CLI, 구독 인증). 동작 확인.
-- WordPress: 설치형 REST API + Application Password. 발행 확인.
-- 쿠팡: 다이나믹 배너(iframe) 3개를 `config/coupang_widget.html`에 등록. NinjaFirewall은 iframe이라 통과.
-- 배너 레이아웃: **per_h2 고정**(앞쪽 소제목 3개 아래 서로 다른 배너 1개씩, 중복 없음). `settings.yaml`의 `banner_layout`으로 grouped/grouped_h2 전환 가능.
-- 발행 상태: 기본 `draft`(검수 후 `publish`로 전환 예정).
+- 로컬 브랜치: `main`
+- 현재 기준 커밋: `455def9`
+- 원격: `https://github.com/sangholabs/wordpress_auto_blog.git`
+- 이 문서 작성 시점에는 안정성·Tistory 대표 이미지 본문 제거·문서·CI 변경이 아직 커밋/푸시되지 않은 로컬 변경으로 남아 있다. 따라서 원격을 최신 구현이라고 표시하면 안 된다.
+- 실제 게시, 유료 LLM·OpenAI 이미지, 예약 등록, GitHub push는 정비 검증 중 실행하지 않았다.
 
-## 3. 환경 / 자격증명 (사용자 PC에 설정됨, 저장소엔 미포함)
+GitHub CLI의 기존 `sangholabs` 토큰은 현재 유효하지 않다. PR 등 `gh` 기능을 쓰기 전 아래 두 번째 명령이 성공하는지 확인한다.
 
-- Python 3.12 + `.venv`(프로젝트 로컬), Node.js, Git, Claude Code(전역) 설치됨.
-- `.env`: WP_SITE_URL, WP_USERNAME, WP_APP_PASSWORD, LLM_PROVIDER=claude_code. (실제 값은 각자 `.env`에, gitignore 처리)
-- `config/coupang_widget.html`: 다이나믹 배너 iframe(각자 파트너스 추적코드). `.gitignore` 처리됨.
-- 모두 `.gitignore`로 제외 → GitHub 배포 시 개인정보 안 나감.
-
-## 4. 모듈 지도 (src/)
-
-- config.py — .env/yaml 로더.
-- keyword_research.py — 구글/네이버 자동완성으로 키워드 수집(0토큰).
-- topic_queue.py — 구매의도·롱테일 점수화, 중복 제거(0토큰).
-- llm_provider.py — claude_code/gemini/anthropic 추상화.
-- prompts.py — SEO·한국어 문체 프롬프트([[PRODUCTS]] 토큰 사용).
-- generate_post.py — 주제 → 마크다운 글 생성.
-- formatter.py — 마크다운 → 가독성 HTML(목차·고지문구·배너/상품카드). 배너 레이아웃 grouped/per_h2/grouped_h2.
-- coupang.py — 파트너스 Open API(승인 후 사용, 현재 미사용).
-- coupang_scraper.py — Playwright로 직링크 추출(보너스, anti-bot로 보류).
-- wp_auth.py — WP 자격증명 점검.
-- wp_publish.py — 설치형 WP REST 발행.
-- pipeline.py — 전체 오케스트레이션(run.bat + 작업 스케줄러).
-
-## 5. 실행
-
-가장 쉬운 방법은 Windows에서 **`제어판.bat`**, macOS 터미널에서 **`./control.sh`**를 실행하는 것이다. 동일한 콘솔 메뉴로 발행·자동발행·설정·대시보드·push를 조작한다. 대시보드(`src/dashboard.py`)로 브라우저 조작도 가능하다(메뉴 11번).
-
-명령줄로도 가능.
-```powershell
-.\.venv\Scripts\python.exe -m src.pipeline            # 전체 1회(키워드→주제→생성→발행)
-.\.venv\Scripts\python.exe -m src.pipeline --refresh  # 키워드 새로 수집 후
-.\.venv\Scripts\python.exe -m src.set_option <key> <value>   # 설정 변경(status/posts_per_day/banner_layout/max_banners/rocket_only/schedule_time)
+```sh
+gh auth login -h github.com
+gh auth status
 ```
-자동화: 메뉴 3번(또는 `python -m src.schedule_task on`)이 매일 `schedule_time`에 실행하도록 등록한다. Windows는 작업 스케줄러와 `run.bat`, macOS는 사용자 LaunchAgent와 `.venv/bin/python` 절대 경로를 사용한다. macOS 수동 실행은 `run.sh`, 상태 확인은 `python -m src.schedule_task status`다.
 
-## 5-1. macOS 지원 (2026-08-04)
+일반 `git push`는 Git 자격증명 관리자를 사용하며 `gh` 로그인과 별개다.
 
-- Apple Silicon/Intel 공통 Homebrew + Python 3.12 설치 절차를 `SETUP.md`에 추가했다.
-- `src/schedule_task.py`가 Windows `schtasks`와 macOS `launchd`를 플랫폼별로 처리한다.
-- launchd plist: `~/Library/LaunchAgents/com.wordpress-auto-blog.pipeline.plist`.
-- 메뉴의 Claude 로그인과 대시보드 실행도 macOS 터미널/백그라운드 방식으로 분기한다.
-- 실제 LLM/WordPress 발행 없이 예약 명령과 plist 구조를 검증하는 테스트를 추가했다.
+## 3. 주요 안정성 변경
 
-## 6. 수익화 현황 / 단계 전략
+### WordPress
 
-- 쿠팡 API는 **최종 승인(누적 판매금액 15만원)** 후 발급. 현재 미달 → **다이나믹 배너**로 수익화 중.
-- 배너 클릭→구매는 추적코드로 수수료 인정(검색링크 CTA는 수익 없음, 폴백용).
-- 15만원 달성 후 `.env`에 COUPANG_ACCESS_KEY/SECRET_KEY 넣으면 **키워드 매칭 실상품 카드로 자동 전환**(코드 변경 0). 폴백 우선순위: API카드 > 스크래퍼 캐시 > 배너 > 검색CTA.
-- 애드센스: 글 30편 이상 축적 후 신청 권장.
+- `pipeline.run(refresh_keywords=False, count=None)`과 `python -m src.pipeline --count N [--refresh]`를 지원한다.
+- 제어판의 “지금 1편”은 정확히 `count=1`; 예약과 키워드 갱신 발행은 설정 하루 편수를 사용한다.
+- 실행 잠금, 후보별 실패 후 계속 진행, 목표 편수의 3배 최대 시도, 원자적 `published.json` 저장을 적용했다.
+- 게시 전후 같은 slug를 조회해 응답 타임아웃 때문에 같은 글을 다시 POST하는 것을 막는다.
+- Rank Math meta 제거 재시도는 실제 meta 검증 400 오류에만 수행한다.
+- Windows `run.bat`이 로그 폴더를 먼저 만들고 macOS `run.sh`는 프로젝트 경로와 UTF-8을 고정한다.
 
-## 7. 알려진 이슈 / 제약
+### 티스토리
 
-- Cowork 리눅스 샌드박스 비활성 → 코드 실행/테스트는 사용자 PC에서.
-- 쿠팡 스크래퍼: 동작하나 빠른 반복 시 쿠팡이 링크생성 throttle. 저속으로만. 주 경로는 배너.
-- 배너 광고 과다 주의: 애드센스 심사 중에는 배너 수를 줄이는 게 안전(현재 per_h2, max_banners로 조절).
-- 글 생성은 claude_code 구독 사용 → 무인 cron 시 6/15 크레딧 정책 변동 가능성(현재 일시중단).
+- 수동 일괄 생성은 각 글마다 쿠팡 소재를 별도로 받는다. `1` URL 입력, `2` 클립보드 자동 읽기, `3` 코드 파일, `0` 완료이고 빈 줄은 다시 선택한다.
+- LLM 600초, OpenAI 이미지 장당 360초, SDK 자동 재시도 0회, 15초 경과 메시지를 적용했다.
+- 정상 장기 작업이 stale 처리되지 않도록 후보 생성 heartbeat를 갱신한다.
+- 패키지를 임시 폴더에서 만들고 manifest까지 완료된 뒤 최종 폴더로 이동한다. 실패 시 임시 폴더를 정리한다.
+- 대표 이미지는 로컬 파일·Supabase `blog_image`·manifest에 보존하지만 본문 HTML에는 넣지 않는다. 본문 이미지 2장만 공개 URL로 들어간다.
+- 이미지 일부 실패는 패키지를 보존하고 `needs_image_retry`로 처리한다.
 
-## 8. 다음 할 일 (우선순위)
+### 공통
 
-1. 며칠 draft 검수 → `settings.yaml` publish.status=publish 로 전환.
-2. 자동발행 등록(완전 자동): Windows/macOS 모두 제어판 3번 또는 `python -m src.schedule_task on`. 직접 `schtasks`/`launchctl` 명령을 작성하지 않는다.
-3. 글 30편 이상 축적 후 애드센스 신청. 판매금액 15만원 달성 시 .env 에 쿠팡 API 키 입력 → 실상품 카드 자동 전환.
-4. 고도화(선택): 게시 후 구글 색인 요청, 내부링크 자동 연결, 대표 이미지 자동 생성, 제목 A/B 성과 피드백.
+- 추적 설정 `config/settings.yaml`과 PC별 `config/settings.local.yaml`을 깊은 병합한다.
+- 공식 기본값: WordPress 공개/하루 3편/09:00, 티스토리 자동 생성 꺼짐/하루 1편/09:30.
+- 로컬 대시보드 POST 요청에 난수 쿠키 토큰과 Host/Origin 검증을 적용했다.
+- GitHub 메뉴는 상태 표시 → 전체 테스트 → 비밀값 검사 → 명시적 확인 → 입력한 메시지로 commit → push 순서다.
+- Gemini는 `google-genai>=2`와 `gemini-3.6-flash`로 이전했다.
+- `python -m src.doctor [--live]`와 3개 운영체제 GitHub Actions를 추가했다.
 
-## 9. 배포 정보
+## 4. 로컬 개인 상태
 
-- GitHub: `git push` 완료. 시크릿(.env, coupang_widget.html, data/, context-notes.md, HANDOFF.md)은 모두 `.gitignore` 처리.
-- 다른 PC: `git clone` → `SETUP.md` 0~8단계대로 본인 값만 채우면 동작.
+다음은 Git에서 제외되므로 새 PC나 새 작업자가 GitHub에서 받을 수 없다.
+
+- `.env`
+- `config/settings.local.yaml`
+- `config/coupang_widget.html`
+- `data/published.json`, `data/policy_workspace.sqlite3`
+- `output/`, `logs/`, `.venv/`
+
+현재 PC의 운영값은 로컬 설정에 남기고 새 설치 기본값과 섞지 않는다. 개인 키나 생성물의 실제 내용은 문서·커밋 메시지·로그에 복사하지 않는다.
+
+## 5. 검증과 설치 주의
+
+검증 명령:
+
+```sh
+./.venv/bin/python -m pytest -q
+./.venv/bin/python -m compileall -q src tests
+./.venv/bin/python -m src.secret_scan
+./.venv/bin/python -m src.secret_scan --history
+zsh -n control.sh run.sh
+./.venv/bin/python -m src.doctor
+./.venv/bin/python -m src.doctor --live
+```
+
+정비 과정에서 `requirements.txt` 설치 승인이 실행 환경의 사용 한도 때문에 거절됐다. 따라서 현재 `.venv`에 새 `google-genai`가 실제 설치됐다고 가정하면 안 된다. 사용자가 다음을 한 번 실행한 뒤 doctor 결과를 확인해야 한다.
+
+```sh
+./.venv/bin/python -m pip install -r requirements.txt
+./.venv/bin/python -m src.doctor
+```
+
+`doctor --live`는 보조금24·Supabase·WordPress를 읽기 전용으로만 검사한다. 게시나 유료 생성은 하지 않는다.
+
+## 6. 운영 명령
+
+제어판:
+
+```sh
+./control.sh
+```
+
+WordPress:
+
+```sh
+python -m src.pipeline --count 1
+python -m src.schedule_task on|status|off
+```
+
+티스토리:
+
+```sh
+python -m src.policy_cli collect
+python -m src.policy_cli generate-recommended --count 5
+python -m src.policy_cli remove-featured-from-body --all
+python -m src.policy_schedule_task on|status|off
+```
+
+셸의 `on|status|off`는 설명 표기다. 실제 실행 때는 하나만 선택한다(예: `python -m src.schedule_task status`).
+
+## 7. 다음 인수자의 완료 조건
+
+1. `requirements.txt`를 현재 `.venv`에 설치하고 doctor의 의존성 검사를 통과시킨다.
+2. 전체 테스트·compileall·YAML·셸 문법·현재/전체 Git 이력 비밀값 검사를 통과시킨다.
+3. 실제 게시·유료 호출 없이 기존 티스토리 패키지를 로컬 재빌드해 대표 이미지가 본문에서만 제외되는지 확인한다.
+4. 변경 목록을 검토한 뒤에만 사용자의 별도 확인을 받고 commit/push한다.
+
+설치 상세는 [SETUP.md](SETUP.md), 새 PC 이전 범위는 [CONTINUE-ON-NEW-PC.md](CONTINUE-ON-NEW-PC.md)를 따른다.

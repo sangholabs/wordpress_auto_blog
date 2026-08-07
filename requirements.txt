@@ -1,12 +1,11 @@
 # 프로젝트 로컬 의존성 — python -m venv .venv 후 설치한다. (전역 오염 방지)
-requests>=2.31
-python-dotenv>=1.0
-pyyaml>=6.0
-beautifulsoup4>=4.12
-playwright>=1.44
-google-generativeai>=0.7
-anthropic>=0.34
-openai>=1.78
-markdown>=3.6
-APScheduler>=3.10
-pytest>=8.0
+requests>=2.31,<3
+python-dotenv>=1.0,<2
+pyyaml>=6.0,<7
+beautifulsoup4>=4.12,<5
+playwright>=1.44,<2
+google-genai>=2.0,<3
+anthropic>=0.75,<1
+openai>=1.78,<3
+markdown>=3.6,<4
+pytest>=8.0,<10

@@ -13,6 +13,7 @@ def _root(monkeypatch, tmp_path):
     windows_python = root / ".venv" / "Scripts" / "python.exe"
     windows_python.parent.mkdir(parents=True)
     windows_python.write_text("", encoding="utf-8")
+    (root / "policy_run.bat").write_text("@echo off\n", encoding="utf-8")
     agents = tmp_path / "LaunchAgents"
     monkeypatch.setattr(policy_schedule_task, "ROOT", root)
     monkeypatch.setattr(policy_schedule_task, "LAUNCH_AGENTS_DIR", agents)
@@ -57,5 +58,6 @@ def test_policy_windows_task_uses_separate_name(monkeypatch, tmp_path):
     assert policy_schedule_task.on() is True
     command = calls[0]
     assert command[command.index("/tn") + 1] == "blog-policy-tistory-auto"
-    assert "src.policy_runner" in command[command.index("/tr") + 1]
-    assert str(root / ".venv/Scripts/python.exe") in command[command.index("/tr") + 1]
+    action = command[command.index("/tr") + 1]
+    assert "cmd.exe /d /c" in action
+    assert str(root / "policy_run.bat") in action

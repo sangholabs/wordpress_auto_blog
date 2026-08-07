@@ -10,6 +10,7 @@ from urllib.parse import quote
 import requests
 
 from .config import env, get_settings
+from .progress import heartbeat
 
 SLOT_ORDER = {"featured": 1, "body1": 2, "body2": 3}
 SLOT_KO = {"featured": "대표", "body1": "본문", "body2": "본문"}
@@ -52,15 +53,17 @@ def _openai_bytes(prompt: str, size: str, quality: str) -> tuple[bytes, str, str
     except ImportError as exc:
         raise RuntimeError("openai 패키지가 없습니다. requirements.txt를 다시 설치하세요.") from exc
     model = get_settings().get("policy_workspace", {}).get("image_model", "gpt-image-2")
-    client = OpenAI(api_key=env("OPENAI_API_KEY"))
-    result = client.images.generate(
-        model=model,
-        prompt=prompt,
-        size=size,
-        quality=quality,
-        output_format="jpeg",
-        output_compression=88,
-    )
+    timeout = int(get_settings().get("policy_workspace", {}).get("image_timeout_sec", 360))
+    client = OpenAI(api_key=env("OPENAI_API_KEY"), timeout=timeout, max_retries=0)
+    with heartbeat(f"OpenAI 이미지 API 응답 대기(제한 {timeout}초)"):
+        result = client.images.generate(
+            model=model,
+            prompt=prompt,
+            size=size,
+            quality=quality,
+            output_format="jpeg",
+            output_compression=88,
+        )
     encoded = result.data[0].b64_json
     if not encoded:
         raise RuntimeError("OpenAI 이미지 응답에 b64_json이 없습니다.")
@@ -73,7 +76,9 @@ def _pollinations_bytes(prompt: str, size: str) -> tuple[bytes, str, str]:
         "https://image.pollinations.ai/prompt/"
         f"{quote(prompt)}?width={width}&height={height}&nologo=true&enhance=true"
     )
-    response = requests.get(url, timeout=120)
+    timeout = min(int(get_settings().get("policy_workspace", {}).get("image_timeout_sec", 360)), 360)
+    with heartbeat(f"Pollinations 이미지 응답 대기(제한 {timeout}초)"):
+        response = requests.get(url, timeout=timeout)
     if response.status_code >= 400 or not response.content:
         raise RuntimeError(f"Pollinations 이미지 생성 실패: HTTP {response.status_code}")
     content_type = response.headers.get("content-type", "").lower()

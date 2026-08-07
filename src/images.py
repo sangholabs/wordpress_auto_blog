@@ -1,4 +1,5 @@
 # 대표 이미지를 자동 생성(Pollinations, 무료·키 불필요)해 WordPress 미디어로 업로드한다
+import hashlib
 import time
 from urllib.parse import quote
 
@@ -45,7 +46,8 @@ def generate_featured_media(keyword: str) -> int | None:
     if not get_settings().get("content", {}).get("featured_image", True):
         return None
     try:
-        seed = abs(hash(keyword)) % 100000  # 키워드별 고정 시드 → 글마다 다른 이미지
+        digest = hashlib.sha256(keyword.encode("utf-8")).digest()
+        seed = int.from_bytes(digest[:8], "big") % 100000  # 프로세스가 달라도 같은 키워드는 같은 시드
         img_url = (
             "https://image.pollinations.ai/prompt/"
             f"{quote(_prompt(keyword))}?width=1200&height=630&nologo=true&seed={seed}"

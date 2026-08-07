@@ -26,7 +26,7 @@ def _config() -> dict:
         "enabled": bool(get_policy_settings().get("supabase_upload_enabled", True)),
         "base_url": base_url,
         "key": key,
-        "bucket": env("SUPABASE_STORAGE_BUCKET", "tistory-images").strip(),
+        "bucket": env("SUPABASE_STORAGE_BUCKET", "blog_image").strip(),
         "prefix": env("SUPABASE_STORAGE_PREFIX", "policy-tistory").strip().strip("/"),
     }
 
@@ -126,6 +126,16 @@ def sync_manifest_images(package_dir: Path, manifest: dict) -> list[str]:
     state.setdefault("images", {})
     state.update({"enabled": cfg["enabled"], "bucket": cfg["bucket"], "prefix": cfg["prefix"]})
     if not cfg["enabled"]:
+        return []
+    current = manifest.get("current_images", {})
+    cached_ready = bool(current) and all(
+        state["images"].get(slot, {}).get("local_path") == relative
+        and state["images"].get(slot, {}).get("public_url")
+        for slot, relative in current.items()
+    )
+    if cached_ready:
+        state["configured"] = bool(cfg["base_url"] and cfg["key"] and cfg["bucket"])
+        state["last_error"] = ""
         return []
     try:
         cfg = _validated_config()

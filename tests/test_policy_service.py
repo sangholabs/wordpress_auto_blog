@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import threading
 
 import pytest
 
@@ -81,6 +82,17 @@ def test_generate_candidate_prints_progress_before_slow_steps(monkeypatch, capsy
     assert "[진행 2/6] '직장인 생활 지원' 글 초안 생성 요청" in output
     assert "LLM 응답 대기" in output
     assert "[진행 3/6] 초안 검증 완료" in output
+
+
+def test_generation_heartbeat_refreshes_candidate_state(monkeypatch):
+    touched = threading.Event()
+    monkeypatch.setattr(
+        policy_service.policy_store,
+        "touch_candidate_generation",
+        lambda candidate_id: touched.set(),
+    )
+    with policy_service._generation_heartbeat("candidate", interval=0.001):
+        assert touched.wait(0.2)
 
 
 def test_generate_recommended_requests_assets_for_each_selected_candidate(monkeypatch):

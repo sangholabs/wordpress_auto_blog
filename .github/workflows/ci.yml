@@ -1,0 +1,36 @@
+name: project-ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Compile modules
+        run: python -m compileall -q src tests
+      - name: Parse tracked YAML settings
+        run: python -c "import pathlib,yaml; [yaml.safe_load(p.read_text(encoding='utf-8')) for p in [pathlib.Path('config/settings.yaml'), pathlib.Path('config/categories.yaml'), pathlib.Path('.github/workflows/ci.yml')]]"
+      - name: Check macOS shell syntax
+        if: runner.os == 'macOS'
+        run: zsh -n control.sh run.sh
+      - name: Scan Git history for high-confidence secrets
+        if: runner.os == 'Linux'
+        run: python -m src.secret_scan --history

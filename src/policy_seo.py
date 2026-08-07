@@ -113,15 +113,25 @@ def audit_local(manifest: dict, full_html: str, *, duplicate_title: bool = False
     storage = manifest.get("supabase", {})
     if storage.get("enabled") and storage.get("configured"):
         remote_images = storage.get("images", {})
-        remote_ready = all(
+        remote_stored = all(
             remote_images.get(slot, {}).get("public_url")
             and remote_images.get(slot, {}).get("local_path") == current_images.get(slot)
-            and soup.find("img", src=remote_images[slot]["public_url"])
             for slot in ("featured", "body1", "body2")
         )
+        body_images_embedded = all(
+            remote_images.get(slot, {}).get("public_url")
+            and soup.find("img", src=remote_images[slot]["public_url"])
+            for slot in ("body1", "body2")
+        )
+        featured_not_embedded = not (
+            remote_images.get("featured", {}).get("public_url")
+            and soup.find("img", src=remote_images["featured"]["public_url"])
+        )
         score -= _check(
-            checks, remote_ready, "supabase_images",
-            "Supabase 대표·본문 이미지 URL이 게시 HTML에 모두 삽입되지 않았습니다.", 8,
+            checks, remote_stored and body_images_embedded and featured_not_embedded,
+            "supabase_images",
+            "Supabase 이미지 보관 상태 또는 본문 이미지 2장 삽입 상태를 확인하세요. "
+            "대표 이미지는 게시 HTML에서 제외되어야 합니다.", 8,
         )
     tables = soup.find_all("table")
     responsive = all(table.get("data-policy-responsive-table") == "true" and table.parent.get("role") == "region" for table in tables)

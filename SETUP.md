@@ -1,239 +1,197 @@
 # 설치 가이드 (Windows / macOS)
 
-전역 도구는 PC에 설치하고 Python 의존성은 프로젝트 `.venv`에 격리한다. Windows와 macOS 모두 같은 Python 모듈을 사용하고, 실행·자동발행 방식만 운영체제에 맞게 선택한다.
+이 프로젝트는 Python 3.12를 기준으로 한다. WordPress 자동 게시와 티스토리 정책 패키지 생성은 같은 가상환경을 사용하지만 예약 작업과 운영 설정은 서로 독립적이다.
 
-## 0. 빠른 시작
+## 1. 필수 도구
 
-1. Python 3.12, Node.js LTS, Git을 설치한다.
-2. `.venv`를 만들고 `requirements.txt`와 Playwright Chromium을 설치한다.
-3. Claude Code를 설치·로그인하거나 다른 LLM provider를 설정한다.
-4. `.env.example`을 `.env`로 복사하고 WordPress 등 필요한 값을 채운다.
-5. `config/categories.yaml`의 니치와 seed 키워드를 확인한다.
-6. 쿠팡 배너/API와 WordPress Application Password를 준비한다.
-7. Windows는 `제어판.bat`, macOS는 `./control.sh`를 실행한다.
-
-## 1. 전역 도구 설치
+항상 필요한 것은 Python 3.12와 Git이다. Node.js·Claude Code는 `LLM_PROVIDER=claude_code`일 때만 필요하고, Playwright·Chrome은 선택 기능인 쿠팡 도우미를 사용할 때만 필요하다.
 
 ### Windows PowerShell
 
 ```powershell
 winget install -e --id Python.Python.3.12
-winget install -e --id OpenJS.NodeJS.LTS
 winget install -e --id Git.Git
-```
-
-설치 후 새 터미널에서 확인한다.
-
-```powershell
 python --version
-node -v
 git --version
-```
-
-### macOS 터미널
-
-[Homebrew](https://brew.sh/)를 먼저 설치한 뒤 다음을 실행한다. Apple Silicon과 Intel Mac 모두 `brew`가 제공하는 명령 검색 경로를 사용하므로 저장소 코드에는 Homebrew 경로를 고정하지 않는다.
-
-```zsh
-brew install python@3.12 node git
-python3.12 --version
-node -v
-git --version
-```
-
-## 2. 프로젝트 가상환경과 의존성
-
-### Windows PowerShell
-
-```powershell
-cd C:\Users\<사용자>\Desktop\blog
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-playwright install chromium
-```
-
-`Activate.ps1` 실행이 차단되면 한 번만 실행한다.
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
 ### macOS zsh
 
+[Homebrew](https://brew.sh/) 설치 후 실행한다. Apple Silicon과 Intel 모두 `brew`가 제공하는 검색 경로를 사용하며 저장소 코드는 `/opt/homebrew` 같은 경로를 고정하지 않는다.
+
 ```zsh
-cd /path/to/wordpress_auto_blog
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-playwright install chromium
+brew install python@3.12 git
+python3.12 --version
+git --version
 ```
 
-실행 권한이 유실된 경우에만 `chmod +x control.sh run.sh`를 한 번 실행한다.
+## 2. 저장소와 가상환경
 
-## 3. 글 생성 엔진 (LLM)
+### Windows
 
-기본값은 로컬 Claude Code CLI의 구독 인증을 사용한다.
+```powershell
+git clone https://github.com/sangholabs/wordpress_auto_blog.git
+cd wordpress_auto_blog
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+copy .env.example .env
+copy config\settings.local.example.yaml config\settings.local.yaml
+```
+
+### macOS
+
+```zsh
+git clone https://github.com/sangholabs/wordpress_auto_blog.git
+cd wordpress_auto_blog
+python3.12 -m venv .venv
+./.venv/bin/python -m pip install --upgrade pip
+./.venv/bin/python -m pip install -r requirements.txt
+cp .env.example .env
+cp config/settings.local.example.yaml config/settings.local.yaml
+chmod +x control.sh run.sh
+```
+
+`config/settings.yaml`은 GitHub에 보관하는 공식 기본값이다. 메뉴·대시보드에서 바꾼 실제 편수·시각·광고 설정은 gitignore된 `config/settings.local.yaml`에 기록되고 기본 설정에 깊은 병합된다.
+
+## 3. 글 생성 엔진 선택
+
+`.env`의 `LLM_PROVIDER`에 하나를 선택한다.
+
+| 값 | 필요한 인증 | 추가 설치 |
+|---|---|---|
+| `anthropic` | `ANTHROPIC_API_KEY` | 없음. Claude Code 로그인 불필요 |
+| `gemini` | `GEMINI_API_KEY` | `requirements.txt`의 `google-genai`; 기본 모델 `gemini-3.6-flash` |
+| `claude_code` | 이 PC의 Claude Code 로그인 | Node.js와 Claude Code CLI |
+
+Anthropic API를 쓰는 현재 권장 예시는 다음과 같다.
+
+```dotenv
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=본인의_API_키
+```
+
+`claude_code`를 선택한 경우에만 설치·로그인한다.
 
 ```sh
 npm install -g @anthropic-ai/claude-code
 claude
-claude -p "안녕"
+claude -p "로그인 확인"
 ```
 
-macOS에서 `claude`를 찾지 못하면 새 터미널을 열고 `command -v claude`로 설치 경로가 PATH에 포함됐는지 확인한다. 자동발행 등록 시 현재 터미널의 PATH가 launchd 설정에 저장되므로 Node/Claude 설치 경로를 바꾼 뒤에는 제어판 3번으로 다시 등록한다.
+Windows에서는 필요하면 `winget install -e --id OpenJS.NodeJS.LTS`, macOS에서는 `brew install node`를 먼저 실행한다. Node나 Claude 설치 위치가 바뀌면 macOS 예약 작업을 다시 등록해 현재 PATH를 plist에 반영한다.
 
-구독 대신 다른 LLM을 사용하려면 `.env`의 `LLM_PROVIDER`를 `gemini` 또는 `anthropic`으로 바꾸고 해당 API 키를 입력한다.
+## 4. WordPress 설정
 
-## 4. 환경변수
-
-Windows:
-
-```powershell
-copy .env.example .env
-```
-
-macOS:
-
-```zsh
-cp .env.example .env
-```
-
-`.env`에서 필요한 블록만 채운다. 이 파일은 gitignore 대상이다.
-
-### 4-A. 국가정책·티스토리 작업실 키
-
-정책 작업실을 사용할 때만 다음 두 키를 추가한다.
-
-1. [공공데이터포털의 대한민국 공공서비스(혜택) 정보](https://www.data.go.kr/data/15113968/openapi.do)에서 활용신청한다.
-2. `인증키 발급현황`에 표시되는 **일반 인증키**를 `.env`의 `DATA_GO_KR_API_KEY`에 그대로 입력한다. 현재 포털의 단일 키와 기존 Encoding/Decoding 키 형식을 모두 지원한다.
-3. OpenAI API 대시보드에서 유료 API 키를 발급해 `OPENAI_API_KEY`에 입력한다. ChatGPT/Codex 구독과 API 결제는 별도다.
-
-```dotenv
-DATA_GO_KR_API_KEY=공공데이터포털_일반_인증키
-OPENAI_API_KEY=OpenAI_API_키
-```
-
-키를 채운 뒤 터미널 제어판의 `17. 정책·티스토리 작업실` 또는 웹 대시보드의 정책 작업실을 연다. 첫 사용 순서는 다음과 같다.
-
-```sh
-python -m src.policy_cli regions 서울 성남
-python -m src.policy_cli collect
-python -m src.policy_cli list
-python -m src.policy_cli generate 후보ID
-python -m src.policy_cli generate-recommended --count 1
-python -m src.policy_cli auto-run
-python -m src.policy_cli settings show
-python -m src.policy_cli dashboard
-python -m src.policy_cli required-pages
-```
-
-후보 수집은 보조금24 첫 페이지를 그대로 보여주지 않는다. 여러 페이지와 근로자·가구·연령·업종 지원조건을 함께 검사하고, 30~50대 주부·직장인 생활과 무관한 전문업종 정책은 자동으로 숨긴다. `list`는 추천 후보만 보여주며 `generate-recommended`를 실행하면 상위 후보를 자동 선택해 생성한다. 이 생성 명령부터 LLM과 이미지 API가 호출될 수 있다.
-
-정책 글은 자동 게시되지 않는다. `output/tistory/YYYY/MM/DD/` 아래의 `00_게시가이드.txt`를 따른다. 티스토리 기본모드의 **HTML 블록**에 `02_본문_HTML블록용.txt` 전체를 붙여넣거나, 본문 이미지를 사이에 넣으려면 `segments/*_HTML블록용.txt` 세 파일을 순서대로 붙여넣는다. 코드블록은 HTML을 렌더링하지 않고 소스로 표시하므로 사용하지 않는다. `.html`과 복사용 `.txt`는 모두 UTF-8 BOM으로 저장되어 macOS 텍스트 편집기에서도 한글을 올바르게 인식한다.
-
-글별 쿠팡 광고는 상품 URL뿐 아니라 쿠팡 파트너스가 발급한 링크+이미지 HTML, iframe, 카테고리/다이나믹 배너 `PartnersCoupang.G` 스크립트를 받을 수 있다. 터미널에서는 코드를 클립보드에 복사하고 **클립보드 코드** 입력을 선택한다. 파일로 적용하려면 `python -m src.policy_cli coupang-assets 글ID --file 배너코드.html`을 사용한다. iframe/script는 티스토리에서 제거될 수 있으므로 비공개 게시 후 확인한다.
-
-### 4-B. 티스토리 이미지용 Supabase Storage
-
-1. Supabase 프로젝트의 Storage에서 `tistory-images` 버킷을 **Public bucket**으로 만든다.
-2. `.env`에 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_STORAGE_BUCKET=tistory-images`를 입력한다. 레거시 프로젝트는 `SUPABASE_SERVICE_ROLE_KEY`도 사용할 수 있다.
-3. secret/service_role 키는 로컬 `.env`에만 두고 GitHub, 티스토리 HTML, 프론트엔드 코드에 절대 넣지 않는다.
-4. 작업실 18번에서 Supabase 상태를 확인한다. 기존 글은 `python -m src.policy_cli upload-images 글ID`로 업로드·재빌드한다.
-
-설정 후 생성되는 대표 1장과 본문 2장은 `policy-tistory/YYYY/MM/DD/글ID/` 경로에 업로드된다. 게시용 전체 HTML과 segments 파일에는 공개 URL의 `<img>`, ALT, 캡션이 들어간다. 티스토리가 외부 이미지를 대표 이미지로 자동 지정하지 않으면 대표 파일만 직접 업로드해 대표로 지정한다.
-
-OpenAI 이미지 생성이 일부 실패하면 글 패키지는 `needs_image_retry` 상태로 남는다. 다음 명령 또는 작업실 메뉴에서 누락 이미지만 재시도할 수 있으며 Pollinations 전환은 사용자가 직접 선택한 경우에만 실행된다.
-
-```sh
-python -m src.policy_cli retry-images 글ID all --provider openai
-python -m src.policy_cli seo-check 글ID
-python -m src.policy_cli seo-check 글ID --url https://내블로그.tistory.com/글주소
-```
-
-티스토리 패키지 자동생성은 WordPress 자동발행과 별도다. 초기값은 꺼짐, 매일 09:30, 하루 1편이며 글 패키지만 만들고 게시하지 않는다.
-
-```sh
-python -m src.policy_schedule_task on
-python -m src.policy_schedule_task status
-python -m src.policy_schedule_task off
-```
-
-macOS plist는 `~/Library/LaunchAgents/com.wordpress-auto-blog.policy-tistory.plist`, 로그는 `logs/policy_pipeline.log`를 사용한다. Windows 작업 이름은 `blog-policy-tistory-auto`다. `src.schedule_task`는 WordPress 전용, `src.policy_schedule_task`는 티스토리 전용이므로 서로 등록·해제되지 않는다.
-
-## 5. 쿠팡 파트너스 설정
-
-쿠팡 파트너스 Open API는 누적 판매금액 15만 원 기준의 최종 승인 후 사용할 수 있다. 코드는 API 키가 있으면 상품카드, 없으면 배너, 둘 다 없으면 검색 링크를 사용한다.
-
-### 승인 전: 다이나믹 배너
-
-1. 쿠팡 파트너스에서 다이나믹 배너의 iframe 코드를 만든다. script 버전은 WordPress 보안 플러그인에 차단될 수 있으므로 iframe을 권장한다.
-2. `config/coupang_widget.example.html`을 `config/coupang_widget.html`로 복사한다.
-3. iframe을 붙여넣는다. 여러 배너는 `---` 한 줄로 구분한다.
-
-복사 명령:
-
-```powershell
-# Windows
-copy config\coupang_widget.example.html config\coupang_widget.html
-```
-
-```zsh
-# macOS
-cp config/coupang_widget.example.html config/coupang_widget.html
-```
-
-### 최종 승인 후: Open API
-
-`.env`에 `COUPANG_ACCESS_KEY`, `COUPANG_SECRET_KEY`, `COUPANG_PARTNERS_TAG`를 입력하면 다음 글부터 API 상품카드로 전환된다.
-
-## 6. WordPress 게시 자격증명
-
-설치형 WordPress 5.6+ 사이트에서 HTTPS를 사용해야 한다. WordPress 관리자 → 사용자 → 프로필 → Application Passwords에서 비밀번호를 만들고, 다시 표시되지 않으므로 즉시 복사해 `.env`에 입력한다.
+설치형 WordPress 5.6+와 HTTPS를 사용한다. 관리자 → 사용자 → 프로필 → Application Passwords에서 비밀번호를 발급하고 `.env`에 입력한다. 게시 인증은 이 방식으로 통일한다.
 
 ```dotenv
 WP_SITE_URL=https://본인블로그주소
 WP_USERNAME=관리자아이디
-WP_APP_PASSWORD=복사한비밀번호
+WP_APP_PASSWORD=발급한_Application_Password
 ```
 
-Application Passwords 섹션이 보이지 않으면 HTTPS 적용 여부와 보안 플러그인의 REST/Application Password 차단 설정을 확인한다.
-
-인증 점검:
+읽기 전용 인증 확인:
 
 ```powershell
-# Windows
 .\.venv\Scripts\python.exe -m src.wp_auth
 ```
 
 ```zsh
-# macOS
 ./.venv/bin/python -m src.wp_auth
 ```
 
-발행 테스트는 `config/settings.yaml`의 `publish.status`를 `draft`로 둔 뒤 실행한다.
+새 설치 기본값은 공개 발행, 하루 3편, 09:00이다. 운영 전 초안 검수가 필요하면 제어판의 WordPress 설정에서 발행모드를 `draft`로 바꾼다.
+
+## 5. 정책·티스토리 작업실 설정
+
+### 보조금24와 이미지 API
+
+1. [공공데이터포털 대한민국 공공서비스(혜택) 정보](https://www.data.go.kr/data/15113968/openapi.do)에서 활용신청한다.
+2. 인증키 발급현황의 일반 인증키를 `DATA_GO_KR_API_KEY`에 입력한다.
+3. OpenAI 이미지 생성이 필요하면 별도 결제 계정의 `OPENAI_API_KEY`를 입력한다. ChatGPT/Codex 구독과 API 결제는 별개다.
+
+```dotenv
+DATA_GO_KR_API_KEY=일반_인증키
+OPENAI_API_KEY=OpenAI_API_키
+```
+
+### Supabase Storage
+
+1. Supabase Storage에 `blog_image`라는 **Public bucket**을 만든다.
+2. `.env`에 프로젝트 URL, 서버용 secret 또는 레거시 service-role 키, 버킷명을 입력한다.
+3. 키는 `.env`에만 보관하고 티스토리 HTML이나 GitHub에 넣지 않는다.
+
+```dotenv
+SUPABASE_URL=https://프로젝트.supabase.co
+SUPABASE_SECRET_KEY=서버용_secret_키
+SUPABASE_STORAGE_BUCKET=blog_image
+SUPABASE_STORAGE_PREFIX=policy-tistory
+```
+
+공개 URL이 필요한 이미지 업로드 시점에만 버킷을 확인한다. 같은 패키지에 유효한 공개 URL이 이미 있으면 불필요한 상태 조회를 하지 않는다.
+
+첫 사용 예시:
+
+```sh
+python -m src.policy_cli collect
+python -m src.policy_cli list
+python -m src.policy_cli generate 후보ID
+python -m src.policy_cli generate-recommended --count 5
+python -m src.policy_cli packages
+```
+
+티스토리는 자동 게시하지 않는다. 새 설치 기본값은 자동 생성 꺼짐, 09:30, 하루 1편이다. 자동 생성은 설정된 수만큼 패키지만 차례로 만들며 로그인·게시·공개 전환을 하지 않는다.
+
+## 6. 티스토리 게시 순서
+
+패키지는 `output/tistory/YYYY/MM/DD/정책ID_제목/`에 저장된다.
+
+1. `01_제목.txt`의 제목을 복사한다.
+2. `images/01_대표_*.jpg`를 티스토리에 따로 업로드하고 대표 이미지로 지정한다.
+3. 티스토리의 HTML 블록 또는 HTML 모드에 `02_본문_HTML블록용.txt` 전체를 붙여넣는다.
+4. 나눠 붙일 때는 `segments/*_HTML블록용.txt`를 안내 순서대로 사용한다.
+5. `04_태그.txt`, `05_출처_검증.md`, `07_SEO_게시정보.txt`를 확인한다.
+6. 비공개 상태로 표·이미지·쿠팡 소재가 유지되는지 확인한 뒤 공개한다.
+
+코드블록은 HTML 소스를 화면에 표시할 뿐 렌더링하지 않으므로 사용하지 않는다. HTML과 복사용 텍스트는 UTF-8 BOM으로 저장된다. 대표 이미지는 파일·Supabase·manifest에는 남지만 본문 HTML에는 들어가지 않으며, 본문 이미지 2장만 공개 URL로 삽입된다.
+
+기존 패키지에서 대표 이미지를 본문에서 제거하려면 외부 업로드 없이 실행한다.
+
+```sh
+python -m src.policy_cli remove-featured-from-body --all
+```
+
+## 7. 쿠팡 파트너스
+
+API 키가 있으면 공식 상품카드, 없으면 `config/coupang_widget.html`의 공용 소재, 둘 다 없으면 수익 추적이 보장되지 않는 검색 링크를 사용한다.
 
 ```powershell
-# Windows
-.\.venv\Scripts\python.exe -m src.wp_publish output\draft_파일명.md
+copy config\coupang_widget.example.html config\coupang_widget.html
 ```
 
 ```zsh
-# macOS
-./.venv/bin/python -m src.wp_publish output/draft_파일명.md
+cp config/coupang_widget.example.html config/coupang_widget.html
 ```
 
-## 7. 애드센스 필수 페이지
+티스토리 수동 생성 중 입력 방식은 다음과 같다.
 
-`.env`의 `SITE_NAME`, `SITE_OWNER`, `SITE_EMAIL`을 채운 뒤 제어판 13번을 실행한다. 생성 후 WordPress 관리자에서 소개·개인정보처리방침·문의 페이지를 메뉴에 추가한다.
+- `1`: 다음 입력창에 쿠팡 HTTPS URL 붙여넣기
+- `2`: 미리 복사한 링크+이미지 HTML, iframe 또는 공식 `PartnersCoupang.G` script 자동 읽기
+- `3`: 해당 코드가 든 UTF-8 파일 경로 입력
+- `0`: 이 글의 소재 입력 완료
 
-티스토리는 17번 작업실의 `티스토리 애드센스 필수 페이지 패키지`를 실행한다. `output/tistory/pages/`에 복사용 HTML 블록 파일을 만들며 WordPress에는 게시하지 않는다. 티스토리의 이름·운영자·문의 이메일이 다르면 `.env`의 `TISTORY_SITE_NAME`, `TISTORY_SITE_OWNER`, `TISTORY_SITE_EMAIL`을 별도로 채운다.
+빈 줄은 완료가 아니다. 5편 일괄 생성이면 글마다 설정된 최대 개수(기본 2개)를 따로 입력한다. 예약 자동 생성은 입력을 받을 수 없으므로 저장된 공용 소재/API/검색 링크만 사용한다. iframe/script는 티스토리에서 제거될 수 있으므로 비공개 미리보기에서 확인한다.
 
-## 8. 실행과 자동발행
+최종 승인 후 다음을 `.env`에 추가하면 공식 API 경로를 사용한다.
 
-### 터미널 제어판
+```dotenv
+COUPANG_ACCESS_KEY=
+COUPANG_SECRET_KEY=
+COUPANG_PARTNERS_TAG=
+```
+
+## 8. 제어판과 직접 실행
 
 ```powershell
 # Windows
@@ -245,66 +203,98 @@ Application Passwords 섹션이 보이지 않으면 HTTPS 적용 여부와 보�
 ./control.sh
 ```
 
-메인 메뉴 1~16은 WordPress 전용이다. 17번으로 들어간 뒤에는 티스토리 정책 패키지의 수집·자동생성·SEO·쿠팡·이미지·대시보드·Claude 로그인·필수 페이지 기능만 표시된다.
+메인 1~16은 WordPress이고 17번 안의 1~24는 티스토리 전용이다.
 
-```text
-1 지금 발행  2 키워드 갱신 후 발행
-3 자동발행 켜기  4 끄기  5 시각 변경
-6 발행모드  7 하루 편수  8 배너 레이아웃  9 배너 개수
-10 로켓 전용  11 대시보드  12 GitHub push
-13 애드센스 필수 페이지  14 Claude 로그인
-15 쿠팡 배너 도우미  16 대표 이미지 켜기/끄기
-17 정책·티스토리 작업실
-```
-
-직접 실행:
-
-```powershell
-# Windows
-.\.venv\Scripts\python.exe -m src.pipeline
-.\.venv\Scripts\python.exe -m src.pipeline --refresh
-```
-
-```zsh
-# macOS
-./run.sh
-./run.sh --refresh
-```
-
-자동발행은 제어판 3번으로 켜고 4번으로 끈다. Windows는 작업 스케줄러의 `blog-auto`, macOS는 사용자 LaunchAgent의 `com.wordpress-auto-blog.pipeline`을 사용한다. macOS 작업은 사용자가 로그인한 세션에서 동작하며 등록 즉시 발행하지 않는다.
-
-브라우저 UI는 제어판 11번에서 열며 기본 주소는 `http://localhost:5000`이다.
-
-상태 확인과 직접 제어:
+WordPress 직접 실행:
 
 ```sh
-python -m src.schedule_task status
+python -m src.pipeline                 # 설정 하루 편수
+python -m src.pipeline --refresh       # 키워드 갱신 후 설정 하루 편수
+python -m src.pipeline --count 1       # 이번 실행만 정확히 1편
+python -m src.pipeline --count 2 --refresh
+```
+
+macOS에서는 같은 인자를 `./run.sh --count 1`처럼 전달할 수 있다.
+
+티스토리 직접 실행:
+
+```sh
+python -m src.policy_runner
+python -m src.policy_runner --count 2 --force-refresh
+python -m src.policy_cli auto-run
+python -m src.policy_cli seo-check 글ID
+python -m src.policy_cli retry-images 글ID all --provider openai
+```
+
+LLM 제한은 600초, OpenAI 이미지 제한은 장당 360초이고 15초마다 경과 상태를 출력한다. 이미지 일부 실패는 글 패키지를 보존하고 `needs_image_retry`로 기록한다.
+
+## 9. 서로 독립된 예약 작업
+
+WordPress:
+
+```sh
 python -m src.schedule_task on
+python -m src.schedule_task status
 python -m src.schedule_task off
 ```
 
-macOS plist는 `~/Library/LaunchAgents/com.wordpress-auto-blog.pipeline.plist`에 생성된다. 실행 로그는 `logs/pipeline.log`, 대시보드 로그는 `logs/dashboard.log`, 발행 이력은 `data/published.json`에 저장된다.
+- Windows 작업: `blog-auto`, `run.bat`, 로그 `logs/pipeline.log`
+- macOS LaunchAgent: `com.wordpress-auto-blog.pipeline`
 
-## 9. 선택 기능: 쿠팡 Playwright/CDP
+티스토리 패키지 자동 생성:
 
-일반 배너/API 운영에는 필요하지 않다. 승인 전 직링크 스크래퍼를 사용할 때만 실제 Google Chrome을 설치한다.
+```sh
+python -m src.policy_schedule_task on
+python -m src.policy_schedule_task status
+python -m src.policy_schedule_task off
+```
+
+- Windows 작업: `blog-policy-tistory-auto`, `policy_run.bat`, 로그 `logs/policy_pipeline.log`
+- macOS LaunchAgent: `com.wordpress-auto-blog.policy-tistory`
+
+한쪽 등록·해제·시각 변경은 다른 쪽에 영향을 주지 않는다. 새 PC로 복사한 파일만으로 예약은 복구되지 않으므로 필요한 작업을 각각 다시 등록한다.
+
+## 10. 진단과 검증
+
+기본 진단은 게시나 외부 유료 호출 없이 Python·가상환경·의존성·설정·스크립트·예약 상태를 확인한다. `--live`도 보조금24, Supabase, WordPress 인증을 읽기 전용으로만 조회한다.
+
+```sh
+python -m src.doctor
+python -m src.doctor --live
+python -m pytest -q
+python -m compileall -q src tests
+python -m src.secret_scan
+python -m src.secret_scan --history
+zsh -n control.sh run.sh
+```
+
+## 11. 선택 기능: Playwright·Chrome 쿠팡 도우미
+
+일반 API/배너 운영에는 필요하지 않다.
 
 ```powershell
-# Windows
+.\.venv\Scripts\python.exe -m playwright install chromium
 winget install -e --id Google.Chrome
 & "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="$PWD\data\chrome-profile"
 ```
 
 ```zsh
-# macOS
+./.venv/bin/python -m playwright install chromium
 brew install --cask google-chrome
 open -na "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="$PWD/data/chrome-profile"
 ```
 
-Chrome에서 쿠팡 파트너스에 로그인한 뒤 별도 터미널에서 실행한다.
+쿠팡 파트너스에 로그인한 뒤 별도 터미널에서 `python -m src.coupang_scraper --run --cdp`를 실행한다. 자동화 제한과 UI 변경 가능성이 있으므로 보조 경로로만 사용한다.
+
+## 12. GitHub 인증과 push
+
+제어판의 GitHub 기능은 상태 확인 → 전체 테스트 → 비밀값 검사 → 사용자 확인 → 커밋 → 현재 브랜치 push 순서다. 일반 `git push`는 Git 자격증명 관리자를 사용하고 `gh`에 의존하지 않는다.
+
+PR 등 GitHub CLI 기능에 로그인이 필요하면 다음을 실행하고 두 번째 명령이 성공한 것을 확인한다.
 
 ```sh
-python -m src.coupang_scraper --run --cdp
+gh auth login
+gh auth status
 ```
 
-빠른 반복은 쿠팡 anti-bot 제한을 유발할 수 있으므로 이 기능은 보조 경로로만 사용한다.
+`.env`, `config/settings.local.yaml`, 쿠팡 개인 소재, SQLite, 생성 글·이미지·로그는 커밋하지 않는다.

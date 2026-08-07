@@ -1,30 +1,24 @@
-# 파이프라인 운영 설정 — 토큰/비용 가드레일과 글 품질 기준을 담는다.
+# 저장소 기본 설정. 실제 PC에서 메뉴로 바꾼 값은 settings.local.yaml에 저장된다.
 
 content:
   min_chars: 1800          # 애드센스/SEO 기준 최소 분량
   toc: true                # 목차 자동 생성
-  internal_links: 3        # 본문 내 관련글 링크 최소 개수
   coupang_disclosure: "이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다."
   featured_image: true     # 대표 이미지 자동 생성(Pollinations 무료). 끄려면 false
   banner_layout: per_h2    # per_h2(소제목마다 서로 다른 배너 1개씩) | grouped(한 자리에 모아) | grouped_h2(한 자리+소제목마다 그룹)
   max_banners: 2           # 글 전체 배너 수(보유 배너 개수 한도 내). 애드센스 심사 중엔 1~2 권장
   h2_groups: 3             # grouped_h2 전용
 
-seo:
-  title_keyword_front: true   # 제목 앞쪽에 핵심 키워드 배치
-  meta_description: true
-  image_alt_required: true
-
 publish:
   status: publish          # 즉시 공개 발행 (검수 필요 시 draft 로 되돌림)
-  schedule: true           # 예약발행 사용
   posts_per_day: 3
   schedule_time: "09:00"   # 자동발행 시각(Windows 작업 스케줄러 / macOS launchd)
 
 llm:
   anthropic_model: "claude-sonnet-4-6"   # LLM_PROVIDER=anthropic 일 때
-  gemini_model: "gemini-1.5-flash"       # LLM_PROVIDER=gemini 일 때
+  gemini_model: "gemini-3.6-flash"       # LLM_PROVIDER=gemini 일 때
   max_tokens: 8192
+  request_timeout_sec: 600
 
 keyword_research:
   request_delay_sec: 0.5   # 요청 간 대기(과도한 호출 방지)
@@ -59,7 +53,7 @@ coupang:
 policy_workspace:
   auto_generate: false    # 티스토리 패키지 자동 생성(자동 게시 아님)
   schedule_time: "09:30" # WordPress 자동발행과 독립된 실행 시각
-  packages_per_day: 5     # 매일 자동으로 만들 티스토리 패키지 수
+  packages_per_day: 1     # 매일 자동으로 만들 티스토리 패키지 수
   candidate_refresh_hours: 24 # 후보 풀이 이 시간보다 오래되면 전체 재수집
   scan_page_size: 500      # 보조금24 페이지당 조회 수
   scan_limit: 5000         # 첫 페이지만 보지 않고 이 범위까지 고르게 검사
@@ -71,6 +65,7 @@ policy_workspace:
   image_provider: openai   # openai 기본, Pollinations는 글/이미지별 수동 선택
   image_model: "gpt-image-2"
   image_quality: medium
+  image_timeout_sec: 360
   images_enabled: true     # 티스토리 대표 1장·본문 2장 생성. WordPress 대표이미지 설정과 독립
   supabase_upload_enabled: true  # 생성 이미지를 Supabase 공개 버킷에 올려 게시 HTML에 URL 삽입
   coupang_enabled: true
@@ -84,8 +79,3 @@ policy_workspace:
   seo_min_body_chars: 1800
   seo_pass_score: 80
   seo_review_score: 60
-
-guardrails:
-  monthly_llm_budget_usd: 10
-  stop_on_budget_exceed: true
-  dedupe_topics: true      # 이미 쓴 주제 중복 방지

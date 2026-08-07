@@ -6,6 +6,7 @@ import subprocess
 from datetime import date
 
 from .config import DATA_DIR, env, get_settings
+from .progress import heartbeat
 
 USAGE_FILE = DATA_DIR / "usage.json"
 
@@ -21,7 +22,9 @@ def _record_call(provider: str):
         data = json.loads(USAGE_FILE.read_text(encoding="utf-8"))
     day = data.setdefault(today, {})
     day[provider] = day.get(provider, 0) + 1
-    USAGE_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary = USAGE_FILE.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temporary, USAGE_FILE)
 
 
 def _via_claude_code(prompt: str, system: str | None, json_schema: dict | None = None) -> str:
@@ -41,25 +44,51 @@ def _via_claude_code(prompt: str, system: str | None, json_schema: dict | None =
     # 구독 로그인이 우선되도록 ANTHROPIC_API_KEY 를 자식 프로세스 환경에서 제거한다.
     child_env = os.environ.copy()
     child_env.pop("ANTHROPIC_API_KEY", None)
-    result = subprocess.run(
-        cmd, input=full, capture_output=True, text=True, encoding="utf-8", env=child_env
-    )
+    timeout = int(_llm_cfg().get("request_timeout_sec", 600))
+    try:
+        result = subprocess.run(
+            cmd, input=full, capture_output=True, text=True, encoding="utf-8", env=child_env,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"Claude Code 응답 제한시간({timeout}초)을 초과했습니다.") from exc
     if result.returncode != 0:
         raise RuntimeError(f"claude -p 실패: {result.stderr.strip()}")
     return result.stdout.strip()
 
 
 def _via_gemini(prompt: str, system: str | None, json_schema: dict | None = None) -> str:
-    import google.generativeai as genai
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError as exc:
+        raise RuntimeError("google-genai 패키지가 없습니다. requirements.txt를 다시 설치하세요.") from exc
 
     if not env("GEMINI_API_KEY"):
         raise RuntimeError(
             "GEMINI_API_KEY 가 비어 있습니다. .env 에 키를 넣거나 LLM_PROVIDER 를 바꾸세요. (SETUP.md 참고)"
         )
-    genai.configure(api_key=env("GEMINI_API_KEY"))
-    name = _llm_cfg().get("gemini_model", "gemini-1.5-flash")
-    model = genai.GenerativeModel(name, system_instruction=system)
-    return model.generate_content(prompt).text.strip()
+    cfg = _llm_cfg()
+    name = cfg.get("gemini_model", "gemini-3.6-flash")
+    timeout_ms = int(cfg.get("request_timeout_sec", 600)) * 1000
+    generation = {
+        "system_instruction": system or "",
+        "max_output_tokens": max(int(cfg.get("max_tokens", 8192)), 8192) if json_schema else int(cfg.get("max_tokens", 8192)),
+    }
+    if json_schema:
+        generation.update({"response_mime_type": "application/json", "response_json_schema": json_schema})
+    with genai.Client(
+        api_key=env("GEMINI_API_KEY"),
+        http_options=types.HttpOptions(timeout=timeout_ms),
+    ) as client:
+        response = client.models.generate_content(
+            model=name,
+            contents=prompt,
+            config=types.GenerateContentConfig(**generation),
+        )
+    if not getattr(response, "text", ""):
+        raise RuntimeError("Gemini 응답에 텍스트가 없습니다.")
+    return response.text.strip()
 
 
 def _via_anthropic(prompt: str, system: str | None, json_schema: dict | None = None) -> str:
@@ -69,8 +98,11 @@ def _via_anthropic(prompt: str, system: str | None, json_schema: dict | None = N
         raise RuntimeError(
             "ANTHROPIC_API_KEY 가 비어 있습니다. .env 에 키를 넣거나 LLM_PROVIDER 를 바꾸세요. (SETUP.md 참고)"
         )
-    client = anthropic.Anthropic(api_key=env("ANTHROPIC_API_KEY"))
     cfg = _llm_cfg()
+    timeout = int(cfg.get("request_timeout_sec", 600))
+    client = anthropic.Anthropic(
+        api_key=env("ANTHROPIC_API_KEY"), timeout=timeout, max_retries=1,
+    )
     request = {
         "model": cfg.get("anthropic_model", "claude-sonnet-4-6"),
         "max_tokens": max(int(cfg.get("max_tokens", 4096)), 8192) if json_schema else int(cfg.get("max_tokens", 4096)),
@@ -103,6 +135,8 @@ def generate(prompt: str, system: str | None = None, *, json_schema: dict | None
             f"알 수 없는 LLM_PROVIDER: '{provider}'. "
             "claude_code | gemini | anthropic 중 하나여야 합니다. (.env 확인)"
         )
-    text = fn(prompt, system, json_schema)
+    labels = {"claude_code": "Claude Code 응답 대기", "gemini": "Gemini API 응답 대기", "anthropic": "Anthropic API 응답 대기"}
+    with heartbeat(labels[provider]):
+        text = fn(prompt, system, json_schema)
     _record_call(provider)
     return text
