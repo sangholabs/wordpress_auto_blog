@@ -71,12 +71,12 @@ def test_manual_coupang_product_link_rejects_unsafe_domains(url):
         ),
         (
             '<script src="https://ads-partners.coupang.com/g.js"></script><script>'
-            'new PartnersCoupang.G({"id":1001896,"trackingCode":"AF3087553","subId":null,'
+            'new PartnersCoupang.G({"id":123456,"trackingCode":"AF0000000","subId":null,'
             '"template":"carousel","width":300,"height":250});</script>',
             "dynamic-banner", (300, 250),
         ),
         (
-            '<iframe src="https://coupa.ng/coxYtA" width="120" height="240" frameborder="0"></iframe>,',
+            '<iframe src="https://coupa.ng/example" width="120" height="240" frameborder="0"></iframe>,',
             "product-banner-iframe", (120, 240),
         ),
         (
