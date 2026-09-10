@@ -28,7 +28,7 @@ def test_policy_macos_plist_is_independent(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(policy_schedule_task, "_system", lambda: "Darwin")
     monkeypatch.setattr(policy_schedule_task, "_launchd_status", lambda: False)
-    monkeypatch.setattr(policy_schedule_task.os, "getuid", lambda: 501)
+    monkeypatch.setattr(policy_schedule_task.os, "getuid", lambda: 501, raising=False)  # Windows에는 os.getuid가 없다
 
     def fake_run(args, **kwargs):
         calls.append(args)

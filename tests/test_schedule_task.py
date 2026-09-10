@@ -19,7 +19,7 @@ def _mac_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(schedule_task, "ROOT", root)
     monkeypatch.setattr(schedule_task, "LAUNCH_AGENTS_DIR", agents)
     monkeypatch.setattr(schedule_task, "PLIST_PATH", plist)
-    monkeypatch.setattr(schedule_task.os, "getuid", lambda: 501)
+    monkeypatch.setattr(schedule_task.os, "getuid", lambda: 501, raising=False)  # Windows에는 os.getuid가 없다
     return root, python, plist
 
 
