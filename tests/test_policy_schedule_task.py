@@ -40,7 +40,7 @@ def test_policy_macos_plist_is_independent(monkeypatch, tmp_path):
     assert payload["Label"] == "com.wordpress-auto-blog.policy-tistory"
     assert payload["ProgramArguments"] == [str(root / ".venv/bin/python"), "-m", "src.policy_runner"]
     assert payload["StartCalendarInterval"] == {"Hour": 9, "Minute": 30}
-    assert payload["StandardOutPath"].endswith("logs/policy_pipeline.log")
+    assert payload["StandardOutPath"] == str(root / "logs" / "policy_pipeline.log")  # Windows 경로 구분자(\\) 대응
     assert "RunAtLoad" not in payload
     assert calls[-1][:2] == ["launchctl", "bootstrap"]
 
